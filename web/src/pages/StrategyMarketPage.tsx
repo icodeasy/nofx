@@ -22,6 +22,8 @@ import { useAuth } from '../contexts/AuthContext'
 import { toast } from 'sonner'
 import { DeepVoidBackground } from '../components/DeepVoidBackground'
 
+const API_BASE = import.meta.env.VITE_API_BASE || ''
+
 interface PublicStrategy {
   id: string
   name: string
@@ -167,7 +169,7 @@ export function StrategyMarketPage() {
   const { data: strategies, isLoading } = useSWR<PublicStrategy[]>(
     'public-strategies',
     async () => {
-      const response = await fetch('/api/strategies/public')
+      const response = await fetch(`${API_BASE}/api/strategies/public`)
       if (!response.ok) throw new Error('Failed to fetch strategies')
       const data = await response.json()
       return data.strategies || []
