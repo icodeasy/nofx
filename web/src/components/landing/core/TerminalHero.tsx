@@ -29,7 +29,7 @@ export default function TerminalHero() {
                 const results = await Promise.all(symbols.map(async (sym) => {
                     try {
                         // Use native fetch to bypass global error handlers (toasts) in httpClient
-                        const response = await fetch(`${API_BASE}/api/klines?symbol=${sym}USDT&interval=1m&limit=1`)
+                        const response = await fetch(`${API_BASE}/klines?symbol=${sym}USDT&interval=1m&limit=1`)
                         if (!response.ok) return null
 
                         const res = await response.json()
