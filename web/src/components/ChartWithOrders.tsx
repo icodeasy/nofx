@@ -105,7 +105,7 @@ export function ChartWithOrders({
   const fetchKlineData = async (symbol: string, interval: string): Promise<KlineData[]> => {
     try {
       const limit = 2000 // 获取最近2000根K线 (更多历史数据)
-      const klineUrl = `/api/klines?symbol=${symbol}&interval=${interval}&limit=${limit}&exchange=${exchange}`
+      const klineUrl = `/klines?symbol=${symbol}&interval=${interval}&limit=${limit}&exchange=${exchange}`
 
       const result = await httpClient.get(klineUrl)
 
@@ -135,7 +135,7 @@ export function ChartWithOrders({
   const fetchOrders = async (traderID: string, symbol: string): Promise<OrderMarker[]> => {
     try {
       // 从后端 API 获取该 trader 的订单记录（只获取已成交的订单）
-      const result = await httpClient.get(`/api/orders?trader_id=${traderID}&symbol=${symbol}&status=FILLED&limit=50`)
+      const result = await httpClient.get(`/orders?trader_id=${traderID}&symbol=${symbol}&status=FILLED&limit=50`)
 
       if (!result.success || !result.data) {
         console.warn('Failed to fetch orders:', result.message)
