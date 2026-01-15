@@ -6,6 +6,8 @@ import { t } from '../i18n/translations'
 import { BarChart3, CandlestickChart, ChevronDown, Search } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
+const API_BASE = import.meta.env.VITE_API_BASE || ''
+
 interface ChartTabsProps {
   traderId: string
   selectedSymbol?: string // 从外部选择的币种
@@ -77,7 +79,7 @@ export function ChartTabs({ traderId, selectedSymbol, updateKey, exchangeId }: C
   // 获取可用币种列表
   useEffect(() => {
     if (marketConfig.hasDropdown) {
-      fetch(`/api/symbols?exchange=${marketConfig.exchange}`)
+      fetch(`${API_BASE}/api/symbols?exchange=${marketConfig.exchange}`)
         .then(res => res.json())
         .then(data => {
           if (data.symbols) {
