@@ -151,7 +151,7 @@ export function AdvancedChart({
   const fetchKlineData = async (symbol: string, interval: string) => {
     try {
       const limit = 1500
-      const klineUrl = `/api/klines?symbol=${symbol}&interval=${interval}&limit=${limit}&exchange=${exchange}`
+      const klineUrl = `/klines?symbol=${symbol}&interval=${interval}&limit=${limit}&exchange=${exchange}`
       const result = await httpClient.get(klineUrl)
 
       if (!result.success || !result.data) {
@@ -242,7 +242,7 @@ export function AdvancedChart({
     try {
       console.log('[AdvancedChart] Fetching orders for trader:', traderID, 'symbol:', symbol)
       // 获取已成交的订单，增加到200条以显示更多历史订单
-      const result = await httpClient.get(`/api/orders?trader_id=${traderID}&symbol=${symbol}&status=FILLED&limit=200`)
+      const result = await httpClient.get(`/orders?trader_id=${traderID}&symbol=${symbol}&status=FILLED&limit=200`)
 
       console.log('[AdvancedChart] Orders API response:', result)
 

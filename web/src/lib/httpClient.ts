@@ -12,6 +12,8 @@
 import axios, { AxiosInstance, AxiosError, AxiosResponse } from 'axios'
 import { toast } from 'sonner'
 
+const API_BASE = import.meta.env.VITE_API_BASE || ''
+
 /**
  * Business response format - only business errors reach the caller
  */
@@ -31,7 +33,7 @@ export class HttpClient {
   constructor() {
     // Create axios instance
     this.axiosInstance = axios.create({
-      baseURL: '/',
+      baseURL: API_BASE || '/',
       timeout: 30000,
       headers: {
         'Content-Type': 'application/json',

@@ -28,7 +28,7 @@ export function ChartWithOrdersSimple({
       try {
         // 从我们自己的服务获取K线数据
         const limit = 100
-        const klineUrl = `/api/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
+        const klineUrl = `/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
 
         console.log('[ChartSimple] Fetching klines from our service:', klineUrl)
         const klineResult = await httpClient.get(klineUrl)
@@ -42,7 +42,7 @@ export function ChartWithOrdersSimple({
 
         // 测试获取订单数据
         if (traderID) {
-          const tradesUrl = `/api/trades?trader_id=${traderID}&symbol=${symbol}&limit=100`
+          const tradesUrl = `/trades?trader_id=${traderID}&symbol=${symbol}&limit=100`
           console.log('[ChartSimple] Fetching trades from:', tradesUrl)
           const tradesResult = await httpClient.get(tradesUrl)
 
