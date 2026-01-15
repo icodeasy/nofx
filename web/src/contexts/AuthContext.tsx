@@ -110,7 +110,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (email: string, password: string) => {
     try {
-      const response = await fetch(`${API_BASE}/api/login`, {
+      const response = await fetch(`${API_BASE}/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -141,7 +141,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loginAdmin = async (password: string) => {
     try {
-      const response = await fetch(`${API_BASE}/api/admin-login`, {
+      const response = await fetch(`${API_BASE}/admin-login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password }),
@@ -200,7 +200,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         otp_secret: string
         qr_code_url: string
         message: string
-      }>('/api/register', requestBody)
+      }>('/register', requestBody)
 
       if (result.success && result.data) {
         return {
@@ -231,7 +231,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const verifyOTP = async (userID: string, otpCode: string) => {
     try {
-      const response = await fetch(`${API_BASE}/api/verify-otp`, {
+      const response = await fetch(`${API_BASE}/verify-otp`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -275,7 +275,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const completeRegistration = async (userID: string, otpCode: string) => {
     try {
-      const response = await fetch(`${API_BASE}/api/complete-registration`, {
+      const response = await fetch(`${API_BASE}/complete-registration`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -323,7 +323,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     otpCode: string
   ) => {
     try {
-      const response = await fetch(`${API_BASE}/api/reset-password`, {
+      const response = await fetch(`${API_BASE}/reset-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -350,7 +350,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = () => {
     const savedToken = localStorage.getItem('auth_token')
     if (savedToken) {
-      fetch(`${API_BASE}/api/logout`, {
+      fetch(`${API_BASE}/logout`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${savedToken}` },
       }).catch(() => {

@@ -15,7 +15,7 @@ export function getSystemConfig(): Promise<SystemConfig> {
   if (configPromise) {
     return configPromise
   }
-  configPromise = fetch(`${API_BASE}/api/config`)
+  configPromise = fetch(`${API_BASE}/config`)
     .then((res) => res.json())
     .then((data: SystemConfig) => {
       cachedConfig = data

@@ -101,7 +101,7 @@ export function StrategyStudioPage() {
   const fetchAiModels = useCallback(async () => {
     if (!token) return
     try {
-      const response = await fetch(`${API_BASE}/api/models`, {
+      const response = await fetch(`${API_BASE}/models`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (response.ok) {
@@ -123,7 +123,7 @@ export function StrategyStudioPage() {
   const fetchStrategies = useCallback(async () => {
     if (!token) return
     try {
-      const response = await fetch(`${API_BASE}/api/strategies`, {
+      const response = await fetch(`${API_BASE}/strategies`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (!response.ok) throw new Error('Failed to fetch strategies')
@@ -166,7 +166,7 @@ export function StrategyStudioPage() {
       try {
         // Fetch default config for the new language
         const response = await fetch(
-          `${API_BASE}/api/strategies/default-config?lang=${language}`,
+          `${API_BASE}/strategies/default-config?lang=${language}`,
           { headers: { Authorization: `Bearer ${token}` } }
         )
         if (!response.ok) return
@@ -200,7 +200,7 @@ export function StrategyStudioPage() {
       )
       const defaultConfig = await configResponse.json()
 
-      const response = await fetch(`${API_BASE}/api/strategies`, {
+      const response = await fetch(`${API_BASE}/strategies`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -254,7 +254,7 @@ export function StrategyStudioPage() {
     if (!confirmed) return
 
     try {
-      const response = await fetch(`${API_BASE}/api/strategies/${id}`, {
+      const response = await fetch(`${API_BASE}/strategies/${id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -278,7 +278,7 @@ export function StrategyStudioPage() {
   const handleDuplicateStrategy = async (id: string) => {
     if (!token) return
     try {
-      const response = await fetch(`${API_BASE}/api/strategies/${id}/duplicate`, {
+      const response = await fetch(`${API_BASE}/strategies/${id}/duplicate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -299,7 +299,7 @@ export function StrategyStudioPage() {
   const handleActivateStrategy = async (id: string) => {
     if (!token) return
     try {
-      const response = await fetch(`${API_BASE}/api/strategies/${id}/activate`, {
+      const response = await fetch(`${API_BASE}/strategies/${id}/activate`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -346,7 +346,7 @@ export function StrategyStudioPage() {
       }
 
       // Create new strategy with imported config
-      const response = await fetch(`${API_BASE}/api/strategies`, {
+      const response = await fetch(`${API_BASE}/strategies`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -382,7 +382,7 @@ export function StrategyStudioPage() {
         language: language as 'zh' | 'en',
       }
       const response = await fetch(
-        `${API_BASE}/api/strategies/${selectedStrategy.id}`,
+        `${API_BASE}/strategies/${selectedStrategy.id}`,
         {
           method: 'PUT',
           headers: {
@@ -427,7 +427,7 @@ export function StrategyStudioPage() {
     if (!token || !editingConfig) return
     setIsLoadingPrompt(true)
     try {
-      const response = await fetch(`${API_BASE}/api/strategies/preview-prompt`, {
+      const response = await fetch(`${API_BASE}/strategies/preview-prompt`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -455,7 +455,7 @@ export function StrategyStudioPage() {
     setIsRunningAiTest(true)
     setAiTestResult(null)
     try {
-      const response = await fetch(`${API_BASE}/api/strategies/test-run`, {
+      const response = await fetch(`${API_BASE}/strategies/test-run`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

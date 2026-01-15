@@ -79,7 +79,7 @@ export function ChartTabs({ traderId, selectedSymbol, updateKey, exchangeId }: C
   // 获取可用币种列表
   useEffect(() => {
     if (marketConfig.hasDropdown) {
-      fetch(`${API_BASE}/api/symbols?exchange=${marketConfig.exchange}`)
+      fetch(`${API_BASE}/symbols?exchange=${marketConfig.exchange}`)
         .then(res => res.json())
         .then(data => {
           if (data.symbols) {

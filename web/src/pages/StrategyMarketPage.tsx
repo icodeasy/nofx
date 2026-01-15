@@ -169,7 +169,7 @@ export function StrategyMarketPage() {
   const { data: strategies, isLoading } = useSWR<PublicStrategy[]>(
     'public-strategies',
     async () => {
-      const response = await fetch(`${API_BASE}/api/strategies/public`)
+      const response = await fetch(`${API_BASE}/strategies/public`)
       if (!response.ok) throw new Error('Failed to fetch strategies')
       const data = await response.json()
       return data.strategies || []
