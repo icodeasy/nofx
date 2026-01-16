@@ -223,13 +223,13 @@ func NewAutoTrader(config AutoTraderConfig, st *store.Store, userID string) (*Au
 	switch config.Exchange {
 	case "binance":
 		logger.Infof("🏦 [%s] Using Binance Futures trading", config.Name)
-		trader = NewFuturesTrader(config.BinanceAPIKey, config.BinanceSecretKey, userID)
+		trader = NewFuturesTrader(config.BinanceAPIKey, config.BinanceSecretKey, config.ID)
 	case "bybit":
 		logger.Infof("🏦 [%s] Using Bybit Futures trading", config.Name)
-		trader = NewBybitTrader(config.BybitAPIKey, config.BybitSecretKey)
+		trader = NewBybitTrader(config.BybitAPIKey, config.BybitSecretKey, config.ID)
 	case "okx":
 		logger.Infof("🏦 [%s] Using OKX Futures trading", config.Name)
-		trader = NewOKXTrader(config.OKXAPIKey, config.OKXSecretKey, config.OKXPassphrase)
+		trader = NewOKXTrader(config.OKXAPIKey, config.OKXSecretKey, config.OKXPassphrase, config.ID)
 	case "bitget":
 		logger.Infof("🏦 [%s] Using Bitget Futures trading", config.Name)
 		trader = NewBitgetTrader(config.BitgetAPIKey, config.BitgetSecretKey, config.BitgetPassphrase)
@@ -695,8 +695,8 @@ func (at *AutoTrader) buildTradingContext() (*kernel.Context, error) {
 		totalEquity = totalWalletBalance + totalUnrealizedProfit
 	}
 
-	// 2. Get position information
-	positions, err := at.trader.GetPositions()
+	// 2. Get position information (filtered by trader ID for isolation)
+	positions, err := at.getFilteredPositions()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get positions: %w", err)
 	}
@@ -1249,17 +1249,39 @@ func (at *AutoTrader) executeCloseLongWithRecord(decision *kernel.Decision, acti
 	// Get entry price and quantity - prioritize local database for accurate quantity
 	var entryPrice float64
 	var quantity float64
+	var foundInLocalDB bool
 
 	// First try to get from local database (more accurate for quantity)
 	if at.store != nil {
 		if openPos, err := at.store.Position().GetOpenPositionBySymbol(at.id, normalizedSymbol, "LONG"); err == nil && openPos != nil {
 			quantity = openPos.Quantity
 			entryPrice = openPos.EntryPrice
+			foundInLocalDB = true
 			logger.Infof("  📊 Using local position data: qty=%.8f, entry=%.2f", quantity, entryPrice)
 		}
 	}
 
-	// Fallback to exchange API if local data not found
+	// POSITION ISOLATION: If position not found in local DB, it belongs to another trader
+	// Check exchange API to confirm, but skip closing if not owned by this trader
+	if !foundInLocalDB {
+		positions, err := at.trader.GetPositions()
+		if err == nil {
+			for _, pos := range positions {
+				if pos["symbol"] == decision.Symbol && pos["side"] == "long" {
+					// Position exists on exchange but not in our local DB
+					// This means it belongs to another trader sharing the same account
+					logger.Infof("  ⚠️ Position %s LONG exists on exchange but not in local database", decision.Symbol)
+					logger.Infof("  ⚠️ This position belongs to another trader - skipping close to prevent interference")
+					return fmt.Errorf("position not owned by this trader - skipping close")
+				}
+			}
+		}
+		// Position doesn't exist anywhere
+		logger.Infof("  ⚠️ No long position found for %s", decision.Symbol)
+		return fmt.Errorf("no long position found for %s", decision.Symbol)
+	}
+
+	// Fallback to exchange API if local data not found (should not reach here due to above check)
 	if quantity == 0 {
 		positions, err := at.trader.GetPositions()
 		if err == nil {
@@ -1313,17 +1335,39 @@ func (at *AutoTrader) executeCloseShortWithRecord(decision *kernel.Decision, act
 	// Get entry price and quantity - prioritize local database for accurate quantity
 	var entryPrice float64
 	var quantity float64
+	var foundInLocalDB bool
 
 	// First try to get from local database (more accurate for quantity)
 	if at.store != nil {
 		if openPos, err := at.store.Position().GetOpenPositionBySymbol(at.id, normalizedSymbol, "SHORT"); err == nil && openPos != nil {
 			quantity = openPos.Quantity
 			entryPrice = openPos.EntryPrice
+			foundInLocalDB = true
 			logger.Infof("  📊 Using local position data: qty=%.8f, entry=%.2f", quantity, entryPrice)
 		}
 	}
 
-	// Fallback to exchange API if local data not found
+	// POSITION ISOLATION: If position not found in local DB, it belongs to another trader
+	// Check exchange API to confirm, but skip closing if not owned by this trader
+	if !foundInLocalDB {
+		positions, err := at.trader.GetPositions()
+		if err == nil {
+			for _, pos := range positions {
+				if pos["symbol"] == decision.Symbol && pos["side"] == "short" {
+					// Position exists on exchange but not in our local DB
+					// This means it belongs to another trader sharing the same account
+					logger.Infof("  ⚠️ Position %s SHORT exists on exchange but not in local database", decision.Symbol)
+					logger.Infof("  ⚠️ This position belongs to another trader - skipping close to prevent interference")
+					return fmt.Errorf("position not owned by this trader - skipping close")
+				}
+			}
+		}
+		// Position doesn't exist anywhere
+		logger.Infof("  ⚠️ No short position found for %s", decision.Symbol)
+		return fmt.Errorf("no short position found for %s", decision.Symbol)
+	}
+
+	// Fallback to exchange API if local data not found (should not reach here due to above check)
 	if quantity == 0 {
 		positions, err := at.trader.GetPositions()
 		if err == nil {
@@ -1583,6 +1627,54 @@ func (at *AutoTrader) GetAccountInfo() (map[string]interface{}, error) {
 		"margin_used":     totalMarginUsed, // Margin used
 		"margin_used_pct": marginUsedPct,   // Margin usage rate
 	}, nil
+}
+
+// getFilteredPositions gets positions filtered by trader ID (for isolation)
+// Returns only positions that are recorded in the local database for this trader
+func (at *AutoTrader) getFilteredPositions() ([]map[string]interface{}, error) {
+	// Get all positions from exchange
+	allPositions, err := at.trader.GetPositions()
+	if err != nil {
+		return nil, err
+	}
+
+	// If no store, return all positions (backward compatibility)
+	if at.store == nil {
+		return allPositions, nil
+	}
+
+	// Get this trader's open positions from local database
+	localPositions, err := at.store.Position().GetOpenPositions(at.id)
+	if err != nil {
+		logger.Infof("⚠️ Failed to get local positions: %v", err)
+		return allPositions, nil // Fallback to all positions
+	}
+
+	// Build a map of symbols+sides that this trader owns
+	ownedPositions := make(map[string]bool)
+	for _, localPos := range localPositions {
+		// Normalize symbol for comparison
+		normalizedSymbol := market.Normalize(localPos.Symbol)
+		side := strings.ToLower(localPos.Side)
+		key := normalizedSymbol + "-" + side
+		ownedPositions[key] = true
+	}
+
+	// Filter positions to only return those owned by this trader
+	var filteredPositions []map[string]interface{}
+	for _, pos := range allPositions {
+		symbol := pos["symbol"].(string)
+		side := pos["side"].(string)
+		normalizedSymbol := market.Normalize(symbol)
+		key := normalizedSymbol + "-" + side
+
+		if ownedPositions[key] {
+			// This position is owned by this trader
+			filteredPositions = append(filteredPositions, pos)
+		}
+	}
+
+	return filteredPositions, nil
 }
 
 // GetPositions gets position list (for API)

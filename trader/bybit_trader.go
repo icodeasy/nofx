@@ -19,11 +19,19 @@ import (
 	bybit "github.com/bybit-exchange/bybit.go.api"
 )
 
+// getBybitOrderLinkId generates unique order link ID for Bybit
+// DEPRECATED: Use generateUnifiedOrderID instead
+// Kept for backward compatibility
+func getBybitOrderLinkId(traderIDPrefix string) string {
+	return generateUnifiedOrderID(traderIDPrefix, "bybit")
+}
+
 // BybitTrader Bybit USDT Perpetual Futures Trader
 type BybitTrader struct {
 	client    *bybit.Client
 	apiKey    string
 	secretKey string
+	traderID  string // Trader ID for position isolation
 
 	// Balance cache
 	cachedBalance     map[string]interface{}
@@ -44,7 +52,7 @@ type BybitTrader struct {
 }
 
 // NewBybitTrader creates a Bybit trader
-func NewBybitTrader(apiKey, secretKey string) *BybitTrader {
+func NewBybitTrader(apiKey, secretKey, traderID string) *BybitTrader {
 	const src = "Up000938"
 
 	client := bybit.NewBybitHttpClient(apiKey, secretKey, bybit.WithBaseURL(bybit.MAINNET))
@@ -66,6 +74,7 @@ func NewBybitTrader(apiKey, secretKey string) *BybitTrader {
 		client:        client,
 		apiKey:        apiKey,
 		secretKey:     secretKey,
+		traderID:      traderID,
 		cacheDuration: 15 * time.Second,
 		qtyStepCache:  make(map[string]float64),
 	}
@@ -73,6 +82,16 @@ func NewBybitTrader(apiKey, secretKey string) *BybitTrader {
 	logger.Infof("🔵 [Bybit] Trader initialized")
 
 	return trader
+}
+
+// getTraderIDPrefix extracts first 4 characters of trader ID for order ID generation
+func (t *BybitTrader) getTraderIDPrefix() string {
+	if len(t.traderID) >= 4 {
+		return t.traderID[:4]
+	}
+	// If traderID is too short, pad with '0'
+	padding := "0000"
+	return t.traderID + padding[:4-len(t.traderID)]
 }
 
 // headerRoundTripper HTTP RoundTripper for adding custom headers
@@ -304,6 +323,7 @@ func (t *BybitTrader) OpenLong(symbol string, quantity float64, leverage int) (m
 		"orderType":   "Market",
 		"qty":         qtyStr,
 		"positionIdx": 0, // One-way position mode
+		"orderLinkId": getBybitOrderLinkId(t.getTraderIDPrefix()),
 	}
 
 	logger.Infof("[Bybit] OpenLong placing order: %+v", params)
@@ -347,6 +367,7 @@ func (t *BybitTrader) OpenShort(symbol string, quantity float64, leverage int) (
 		"orderType":   "Market",
 		"qty":         qtyStr,
 		"positionIdx": 0, // One-way position mode
+		"orderLinkId": getBybitOrderLinkId(t.getTraderIDPrefix()),
 	}
 
 	logger.Infof("[Bybit] OpenShort placing order: %+v", params)
@@ -394,6 +415,7 @@ func (t *BybitTrader) CloseLong(symbol string, quantity float64) (map[string]int
 		"qty":         qtyStr,
 		"positionIdx": 0,
 		"reduceOnly":  true,
+		"orderLinkId": getBybitOrderLinkId(t.getTraderIDPrefix()),
 	}
 
 	result, err := t.client.NewUtaBybitServiceWithParams(params).PlaceOrder(context.Background())
@@ -439,6 +461,7 @@ func (t *BybitTrader) CloseShort(symbol string, quantity float64) (map[string]in
 		"qty":         qtyStr,
 		"positionIdx": 0,
 		"reduceOnly":  true,
+		"orderLinkId": getBybitOrderLinkId(t.getTraderIDPrefix()),
 	}
 
 	result, err := t.client.NewUtaBybitServiceWithParams(params).PlaceOrder(context.Background())
@@ -573,6 +596,7 @@ func (t *BybitTrader) SetStopLoss(symbol string, positionSide string, quantity, 
 		"triggerDirection": triggerDirection,
 		"triggerBy":        "LastPrice",
 		"reduceOnly":       true,
+		"orderLinkId":      getBybitOrderLinkId(t.getTraderIDPrefix()),
 	}
 
 	result, err := t.client.NewUtaBybitServiceWithParams(params).PlaceOrder(context.Background())
@@ -619,6 +643,7 @@ func (t *BybitTrader) SetTakeProfit(symbol string, positionSide string, quantity
 		"triggerDirection": triggerDirection,
 		"triggerBy":        "LastPrice",
 		"reduceOnly":       true,
+		"orderLinkId":      getBybitOrderLinkId(t.getTraderIDPrefix()),
 	}
 
 	result, err := t.client.NewUtaBybitServiceWithParams(params).PlaceOrder(context.Background())

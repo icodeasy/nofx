@@ -15,37 +15,57 @@ import (
 	"github.com/adshao/go-binance/v2/futures"
 )
 
-// getBrOrderID generates unique order ID (for futures contracts)
-// Format: x-{BR_ID}{TIMESTAMP}{RANDOM}
-// Futures limit is 32 characters, use this limit consistently
-// Uses nanosecond timestamp + random number to ensure global uniqueness (collision probability < 10^-20)
-func getBrOrderID() string {
-	brID := "KzrpZaP9" // Futures br ID
+// generateUnifiedOrderID generates unified order ID across all exchanges
+// Format: {TRADER_ID_PREFIX}-{EXCHANGE_NAME}-{TIMESTAMP}{RANDOM}
+// Example: a1b2-binance-1736889600000abcdef12
+func generateUnifiedOrderID(traderIDPrefix, exchangeName string) string {
+	// Generate timestamp (milliseconds)
+	timestamp := time.Now().UnixNano() / 1000000
 
-	// Calculate available space: 32 - len("x-KzrpZaP9") = 32 - 11 = 21 characters
-	// Allocation: 13-digit timestamp + 8-digit random = 21 characters (perfect utilization)
-	timestamp := time.Now().UnixNano() % 10000000000000 // 13-digit nanosecond timestamp
-
-	// Generate 4-byte random number (8 hex digits)
+	// Generate random component (8 hex digits = 4 bytes)
 	randomBytes := make([]byte, 4)
 	rand.Read(randomBytes)
 	randomHex := hex.EncodeToString(randomBytes)
 
-	// Format: x-KzrpZaP9{13-digit timestamp}{8-digit random}
-	// Example: x-KzrpZaP91234567890123abcdef12 (exactly 31 characters)
-	orderID := fmt.Sprintf("x-%s%d%s", brID, timestamp, randomHex)
+	// Format: {TRADER_ID_PREFIX}-{EXCHANGE_NAME}-{TIMESTAMP}{RANDOM}
+	// Example: a1b2-binance-1736889600000abcdef12
+	orderID := fmt.Sprintf("%s-%s-%d%s", traderIDPrefix, exchangeName, timestamp, randomHex)
 
-	// Ensure not exceeding 32-character limit (theoretically exactly 31 characters)
+	// Ensure not exceeding 32-character limit
 	if len(orderID) > 32 {
-		orderID = orderID[:32]
+		// Truncate the timestamp if needed
+		maxTimestampLen := 32 - len(traderIDPrefix) - len(exchangeName) - 2 - 8 // 2 for dashes, 8 for random
+		timestampStr := fmt.Sprintf("%d", timestamp)
+		if len(timestampStr) > maxTimestampLen {
+			timestampStr = timestampStr[:maxTimestampLen]
+		}
+		orderID = fmt.Sprintf("%s-%s-%s%s", traderIDPrefix, exchangeName, timestampStr, randomHex)
 	}
 
 	return orderID
 }
 
+// getBrOrderID generates unique order ID (for futures contracts)
+// DEPRECATED: Use generateUnifiedOrderID instead
+// Kept for backward compatibility
+func getBrOrderID(traderIDPrefix string) string {
+	return generateUnifiedOrderID(traderIDPrefix, "binance")
+}
+
+// getTraderIDPrefix extracts first 4 characters of trader ID for order ID generation
+func (t *FuturesTrader) getTraderIDPrefix() string {
+	if len(t.traderID) >= 4 {
+		return t.traderID[:4]
+	}
+	// If traderID is too short, pad with '0'
+	padding := "0000"
+	return t.traderID + padding[:4-len(t.traderID)]
+}
+
 // FuturesTrader Binance futures trader
 type FuturesTrader struct {
 	client *futures.Client
+	traderID string // Trader ID for position isolation (first 4 chars used in order IDs)
 
 	// Balance cache
 	cachedBalance     map[string]interface{}
@@ -62,10 +82,10 @@ type FuturesTrader struct {
 }
 
 // NewFuturesTrader creates futures trader
-func NewFuturesTrader(apiKey, secretKey string, userId string) *FuturesTrader {
+func NewFuturesTrader(apiKey, secretKey, traderID string) *FuturesTrader {
 	client := futures.NewClient(apiKey, secretKey)
 
-	hookRes := hook.HookExec[hook.NewBinanceTraderResult](hook.NEW_BINANCE_TRADER, userId, client)
+	hookRes := hook.HookExec[hook.NewBinanceTraderResult](hook.NEW_BINANCE_TRADER, traderID, client)
 	if hookRes != nil && hookRes.GetResult() != nil {
 		client = hookRes.GetResult()
 	}
@@ -74,6 +94,7 @@ func NewFuturesTrader(apiKey, secretKey string, userId string) *FuturesTrader {
 	syncBinanceServerTime(client)
 	trader := &FuturesTrader{
 		client:        client,
+		traderID:      traderID,
 		cacheDuration: 15 * time.Second, // 15-second cache
 	}
 
@@ -351,7 +372,7 @@ func (t *FuturesTrader) OpenLong(symbol string, quantity float64, leverage int) 
 		PositionSide(futures.PositionSideTypeLong).
 		Type(futures.OrderTypeMarket).
 		Quantity(quantityStr).
-		NewClientOrderID(getBrOrderID()).
+		NewClientOrderID(getBrOrderID(t.getTraderIDPrefix())).
 		Do(context.Background())
 
 	if err != nil {
@@ -406,7 +427,7 @@ func (t *FuturesTrader) OpenShort(symbol string, quantity float64, leverage int)
 		PositionSide(futures.PositionSideTypeShort).
 		Type(futures.OrderTypeMarket).
 		Quantity(quantityStr).
-		NewClientOrderID(getBrOrderID()).
+		NewClientOrderID(getBrOrderID(t.getTraderIDPrefix())).
 		Do(context.Background())
 
 	if err != nil {
@@ -457,7 +478,7 @@ func (t *FuturesTrader) CloseLong(symbol string, quantity float64) (map[string]i
 		PositionSide(futures.PositionSideTypeLong).
 		Type(futures.OrderTypeMarket).
 		Quantity(quantityStr).
-		NewClientOrderID(getBrOrderID()).
+		NewClientOrderID(getBrOrderID(t.getTraderIDPrefix())).
 		Do(context.Background())
 
 	if err != nil {
@@ -512,7 +533,7 @@ func (t *FuturesTrader) CloseShort(symbol string, quantity float64) (map[string]
 		PositionSide(futures.PositionSideTypeShort).
 		Type(futures.OrderTypeMarket).
 		Quantity(quantityStr).
-		NewClientOrderID(getBrOrderID()).
+		NewClientOrderID(getBrOrderID(t.getTraderIDPrefix())).
 		Do(context.Background())
 
 	if err != nil {
@@ -826,7 +847,7 @@ func (t *FuturesTrader) SetStopLoss(symbol string, positionSide string, quantity
 		TriggerPrice(fmt.Sprintf("%.8f", stopPrice)).
 		WorkingType(futures.WorkingTypeContractPrice).
 		ClosePosition(true).
-		ClientAlgoId(getBrOrderID()).
+		ClientAlgoId(getBrOrderID(t.getTraderIDPrefix())).
 		Do(context.Background())
 
 	if err != nil {
@@ -860,7 +881,7 @@ func (t *FuturesTrader) SetTakeProfit(symbol string, positionSide string, quanti
 		TriggerPrice(fmt.Sprintf("%.8f", takeProfitPrice)).
 		WorkingType(futures.WorkingTypeContractPrice).
 		ClosePosition(true).
-		ClientAlgoId(getBrOrderID()).
+		ClientAlgoId(getBrOrderID(t.getTraderIDPrefix())).
 		Do(context.Background())
 
 	if err != nil {

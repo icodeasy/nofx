@@ -3,10 +3,8 @@ package trader
 import (
 	"bytes"
 	"crypto/hmac"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -41,6 +39,7 @@ type OKXTrader struct {
 	apiKey     string
 	secretKey  string
 	passphrase string
+	traderID   string // Trader ID for position isolation
 
 	// Margin mode setting
 	isCrossMargin bool
@@ -90,21 +89,14 @@ type OKXResponse struct {
 }
 
 // genOkxClOrdID generates OKX order ID
-func genOkxClOrdID() string {
-	timestamp := time.Now().UnixNano() % 10000000000000
-	randomBytes := make([]byte, 4)
-	rand.Read(randomBytes)
-	randomHex := hex.EncodeToString(randomBytes)
-	// OKX clOrdId max 32 characters
-	orderID := fmt.Sprintf("%s%d%s", okxTag, timestamp, randomHex)
-	if len(orderID) > 32 {
-		orderID = orderID[:32]
-	}
-	return orderID
+// DEPRECATED: Use generateUnifiedOrderID instead
+// Kept for backward compatibility
+func genOkxClOrdID(traderIDPrefix string) string {
+	return generateUnifiedOrderID(traderIDPrefix, "okx")
 }
 
 // NewOKXTrader creates OKX trader
-func NewOKXTrader(apiKey, secretKey, passphrase string) *OKXTrader {
+func NewOKXTrader(apiKey, secretKey, passphrase, traderID string) *OKXTrader {
 	// Use default transport which respects system proxy settings
 	// OKX requires proxy in China due to DNS pollution
 	httpClient := &http.Client{
@@ -116,6 +108,7 @@ func NewOKXTrader(apiKey, secretKey, passphrase string) *OKXTrader {
 		apiKey:           apiKey,
 		secretKey:        secretKey,
 		passphrase:       passphrase,
+		traderID:         traderID,
 		httpClient:       httpClient,
 		cacheDuration:    15 * time.Second,
 		instrumentsCache: make(map[string]*OKXInstrument),
@@ -136,6 +129,16 @@ func NewOKXTrader(apiKey, secretKey, passphrase string) *OKXTrader {
 
 	logger.Infof("✓ OKX trader initialized with position mode: %s", trader.positionMode)
 	return trader
+}
+
+// getTraderIDPrefix extracts first 4 characters of trader ID for order ID generation
+func (t *OKXTrader) getTraderIDPrefix() string {
+	if len(t.traderID) >= 4 {
+		return t.traderID[:4]
+	}
+	// If traderID is too short, pad with '0'
+	padding := "0000"
+	return t.traderID + padding[:4-len(t.traderID)]
 }
 
 // detectPositionMode gets current position mode from account config
@@ -612,7 +615,7 @@ func (t *OKXTrader) OpenLong(symbol string, quantity float64, leverage int) (map
 		"posSide": "long",
 		"ordType": "market",
 		"sz":      szStr,
-		"clOrdId": genOkxClOrdID(),
+		"clOrdId": genOkxClOrdID(t.getTraderIDPrefix()),
 		"tag":     okxTag,
 	}
 
@@ -689,7 +692,7 @@ func (t *OKXTrader) OpenShort(symbol string, quantity float64, leverage int) (ma
 		"posSide": "short",
 		"ordType": "market",
 		"sz":      szStr,
-		"clOrdId": genOkxClOrdID(),
+		"clOrdId": genOkxClOrdID(t.getTraderIDPrefix()),
 		"tag":     okxTag,
 	}
 
@@ -794,7 +797,7 @@ func (t *OKXTrader) CloseLong(symbol string, quantity float64) (map[string]inter
 		"side":    "sell",
 		"ordType": "market",
 		"sz":      szStr,
-		"clOrdId": genOkxClOrdID(),
+		"clOrdId": genOkxClOrdID(t.getTraderIDPrefix()),
 		"tag":     okxTag,
 	}
 
@@ -905,7 +908,7 @@ func (t *OKXTrader) CloseShort(symbol string, quantity float64) (map[string]inte
 		"side":    "buy",
 		"ordType": "market",
 		"sz":      szStr,
-		"clOrdId": genOkxClOrdID(),
+		"clOrdId": genOkxClOrdID(t.getTraderIDPrefix()),
 		"tag":     okxTag,
 	}
 
@@ -1304,19 +1307,19 @@ func (t *OKXTrader) GetClosedPnL(startTime time.Time, limit int) ([]ClosedPnLRec
 		Code string `json:"code"`
 		Msg  string `json:"msg"`
 		Data []struct {
-			InstID      string `json:"instId"`      // Instrument ID (e.g., "BTC-USDT-SWAP")
-			Direction   string `json:"direction"`   // Position direction: "long" or "short"
-			OpenAvgPx   string `json:"openAvgPx"`   // Average open price
-			CloseAvgPx  string `json:"closeAvgPx"`  // Average close price
+			InstID        string `json:"instId"`        // Instrument ID (e.g., "BTC-USDT-SWAP")
+			Direction     string `json:"direction"`     // Position direction: "long" or "short"
+			OpenAvgPx     string `json:"openAvgPx"`     // Average open price
+			CloseAvgPx    string `json:"closeAvgPx"`    // Average close price
 			CloseTotalPos string `json:"closeTotalPos"` // Closed position quantity
-			RealizedPnl string `json:"realizedPnl"` // Realized PnL
-			Fee         string `json:"fee"`         // Total fee
-			FundingFee  string `json:"fundingFee"`  // Funding fee
-			Lever       string `json:"lever"`       // Leverage
-			CTime       string `json:"cTime"`       // Position open time
-			UTime       string `json:"uTime"`       // Position close time
-			Type        string `json:"type"`        // Close type: 1=close position, 2=partial close, 3=liquidation, 4=partial liquidation
-			PosId       string `json:"posId"`       // Position ID
+			RealizedPnl   string `json:"realizedPnl"`   // Realized PnL
+			Fee           string `json:"fee"`           // Total fee
+			FundingFee    string `json:"fundingFee"`    // Funding fee
+			Lever         string `json:"lever"`         // Leverage
+			CTime         string `json:"cTime"`         // Position open time
+			UTime         string `json:"uTime"`         // Position close time
+			Type          string `json:"type"`          // Close type: 1=close position, 2=partial close, 3=liquidation, 4=partial liquidation
+			PosId         string `json:"posId"`         // Position ID
 		} `json:"data"`
 	}
 

@@ -66,7 +66,7 @@ func NewBybitTraderTestSuite(t *testing.T) *BybitTraderTestSuite {
 	}))
 
 	// Create real Bybit trader (for interface compliance testing)
-	trader := NewBybitTrader("test_api_key", "test_secret_key")
+	trader := NewBybitTrader("test_api_key", "test_secret_key", "test_trader")
 
 	// Create base suite
 	baseSuite := NewTraderTestSuite(t, trader)
@@ -128,7 +128,7 @@ func TestNewBybitTrader(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			trader := NewBybitTrader(tt.apiKey, tt.secretKey)
+			trader := NewBybitTrader(tt.apiKey, tt.secretKey, "test_trader")
 
 			if tt.wantNil {
 				assert.Nil(t, trader)
@@ -176,7 +176,7 @@ func TestBybitTrader_SymbolFormat(t *testing.T) {
 
 // TestBybitTrader_FormatQuantity Test quantity formatting
 func TestBybitTrader_FormatQuantity(t *testing.T) {
-	trader := NewBybitTrader("test", "test")
+	trader := NewBybitTrader("test", "test", "test_trader")
 
 	tests := []struct {
 		name     string
@@ -335,7 +335,7 @@ func convertBybitSide(side string) string {
 // TestBybitTrader_CategoryLinear Test using only linear category
 func TestBybitTrader_CategoryLinear(t *testing.T) {
 	// Bybit trader should only use linear category (USDT perpetual contracts)
-	trader := NewBybitTrader("test", "test")
+	trader := NewBybitTrader("test", "test", "test_trader")
 	assert.NotNil(t, trader)
 
 	// Verify default configuration
@@ -344,7 +344,7 @@ func TestBybitTrader_CategoryLinear(t *testing.T) {
 
 // TestBybitTrader_CacheDuration Test cache duration
 func TestBybitTrader_CacheDuration(t *testing.T) {
-	trader := NewBybitTrader("test", "test")
+	trader := NewBybitTrader("test", "test", "test_trader")
 
 	// Verify default cache time is 15 seconds
 	assert.Equal(t, 15*time.Second, trader.cacheDuration)
