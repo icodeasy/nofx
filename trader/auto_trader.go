@@ -3,7 +3,6 @@ package trader
 import (
 	"encoding/json"
 	"fmt"
-	"math"
 	"nofx/experience"
 	"nofx/kernel"
 	"nofx/logger"
@@ -359,6 +358,16 @@ func NewAutoTrader(config AutoTraderConfig, st *store.Store, userID string) (*Au
 	}, nil
 }
 
+// IsolatedBalance represents a trader's isolated balance information
+type IsolatedBalance struct {
+	InitialBalance   float64 // Initial allocated balance
+	RealizedPnL      float64 // Realized P&L from closed positions (available for trading)
+	UnrealizedPnL    float64 // Unrealized P&L from open positions (NOT available, locked)
+	TotalEquity      float64 // InitialBalance + RealizedPnL + UnrealizedPnL (total wealth)
+	UsedMargin       float64 // Margin used by trader's positions
+	AvailableBalance float64 // InitialBalance + RealizedPnL - UsedMargin (available for new positions)
+}
+
 // Run runs the automatic trading main loop
 func (at *AutoTrader) Run() error {
 	at.isRunningMutex.Lock()
@@ -683,35 +692,26 @@ func (at *AutoTrader) runCycle() error {
 
 // buildTradingContext builds trading context
 func (at *AutoTrader) buildTradingContext() (*kernel.Context, error) {
-	// 1. Get account information
-	balance, err := at.trader.GetBalance()
+	// 1. Get isolated balance for this trader (enforces balance isolation)
+	isolatedBalance, err := at.calculateIsolatedBalance()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get account balance: %w", err)
+		return nil, fmt.Errorf("failed to calculate isolated balance: %w", err)
 	}
 
-	// Get account fields
-	totalWalletBalance := 0.0
-	totalUnrealizedProfit := 0.0
-	availableBalance := 0.0
-	totalEquity := 0.0
+	logger.Infof("💰 [%s] Isolated Balance: Initial=%.2f USDT, Equity=%.2f USDT (Realized P&L: %.2f, Unrealized P&L: %.2f), Available=%.2f USDT (Used Margin: %.2f)",
+		at.name,
+		isolatedBalance.InitialBalance,
+		isolatedBalance.TotalEquity,
+		isolatedBalance.RealizedPnL,
+		isolatedBalance.UnrealizedPnL,
+		isolatedBalance.AvailableBalance,
+		isolatedBalance.UsedMargin,
+	)
 
-	if wallet, ok := balance["totalWalletBalance"].(float64); ok {
-		totalWalletBalance = wallet
-	}
-	if unrealized, ok := balance["totalUnrealizedProfit"].(float64); ok {
-		totalUnrealizedProfit = unrealized
-	}
-	if avail, ok := balance["availableBalance"].(float64); ok {
-		availableBalance = avail
-	}
-
-	// Use totalEquity directly if provided by trader (more accurate)
-	if eq, ok := balance["totalEquity"].(float64); ok && eq > 0 {
-		totalEquity = eq
-	} else {
-		// Fallback: Total Equity = Wallet balance + Unrealized profit
-		totalEquity = totalWalletBalance + totalUnrealizedProfit
-	}
+	// Use isolated balance metrics
+	totalEquity := isolatedBalance.TotalEquity
+	availableBalance := isolatedBalance.AvailableBalance
+	totalUnrealizedProfit := isolatedBalance.UnrealizedPnL
 
 	// 2. Get position information (filtered by trader ID for isolation)
 	positions, err := at.getFilteredPositions()
@@ -1070,6 +1070,12 @@ func (at *AutoTrader) executeOpenLongWithRecord(decision *kernel.Decision, actio
 		decision.PositionSizeUSD = adjustedPositionSize
 	}
 
+	// [CODE ENFORCED] Balance Isolation Check: validate against isolated balance
+	if err := at.validateIsolatedPositionSize(decision.PositionSizeUSD, decision.Leverage); err != nil {
+		logger.Warnf("  ❌ Isolated balance validation failed: %v", err)
+		return err
+	}
+
 	// ⚠️ Auto-adjust position size if insufficient margin
 	// Formula: totalRequired = positionSize/leverage + positionSize*0.001 + positionSize/leverage*0.01
 	//        = positionSize * (1.01/leverage + 0.001)
@@ -1185,6 +1191,12 @@ func (at *AutoTrader) executeOpenShortWithRecord(decision *kernel.Decision, acti
 	adjustedPositionSize, wasCapped := at.enforcePositionValueRatio(decision.PositionSizeUSD, equity, decision.Symbol)
 	if wasCapped {
 		decision.PositionSizeUSD = adjustedPositionSize
+	}
+
+	// [CODE ENFORCED] Balance Isolation Check: validate against isolated balance
+	if err := at.validateIsolatedPositionSize(decision.PositionSizeUSD, decision.Leverage); err != nil {
+		logger.Warnf("  ❌ Isolated balance validation failed: %v", err)
+		return err
 	}
 
 	// ⚠️ Auto-adjust position size if insufficient margin
@@ -1614,69 +1626,32 @@ func (at *AutoTrader) GetStatus() map[string]interface{} {
 
 // GetAccountInfo gets account information (for API)
 func (at *AutoTrader) GetAccountInfo() (map[string]interface{}, error) {
-	balance, err := at.trader.GetBalance()
+	// Get isolated balance for this trader
+	isolatedBalance, err := at.calculateIsolatedBalance()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get balance: %w", err)
+		return nil, fmt.Errorf("failed to calculate isolated balance: %w", err)
 	}
 
-	// Get account fields
-	totalWalletBalance := 0.0
-	totalUnrealizedProfit := 0.0
-	availableBalance := 0.0
-	totalEquity := 0.0
-
-	if wallet, ok := balance["totalWalletBalance"].(float64); ok {
-		totalWalletBalance = wallet
-	}
-	if unrealized, ok := balance["totalUnrealizedProfit"].(float64); ok {
-		totalUnrealizedProfit = unrealized
-	}
-	if avail, ok := balance["availableBalance"].(float64); ok {
-		availableBalance = avail
-	}
-
-	// Use totalEquity directly if provided by trader (more accurate)
-	if eq, ok := balance["totalEquity"].(float64); ok && eq > 0 {
-		totalEquity = eq
-	} else {
-		// Fallback: Total Equity = Wallet balance + Unrealized profit
-		totalEquity = totalWalletBalance + totalUnrealizedProfit
-	}
-
-	// Get positions to calculate total margin
-	positions, err := at.trader.GetPositions()
+	// For comparison, also get full exchange balance
+	exchangeBalance, err := at.trader.GetBalance()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get positions: %w", err)
+		return nil, fmt.Errorf("failed to get exchange balance: %w", err)
 	}
 
-	totalMarginUsed := 0.0
-	totalUnrealizedPnLCalculated := 0.0
-	for _, pos := range positions {
-		markPrice := pos["markPrice"].(float64)
-		quantity := pos["positionAmt"].(float64)
-		if quantity < 0 {
-			quantity = -quantity
+	// Get exchange balance fields
+	exchangeTotalEquity := 0.0
+	if eq, ok := exchangeBalance["totalEquity"].(float64); ok && eq > 0 {
+		exchangeTotalEquity = eq
+	} else if wallet, ok := exchangeBalance["totalWalletBalance"].(float64); ok {
+		if unrealized, ok := exchangeBalance["totalUnrealizedProfit"].(float64); ok {
+			exchangeTotalEquity = wallet + unrealized
+		} else {
+			exchangeTotalEquity = wallet
 		}
-		unrealizedPnl := pos["unRealizedProfit"].(float64)
-		totalUnrealizedPnLCalculated += unrealizedPnl
-
-		leverage := 10
-		if lev, ok := pos["leverage"].(float64); ok {
-			leverage = int(lev)
-		}
-		marginUsed := (quantity * markPrice) / float64(leverage)
-		totalMarginUsed += marginUsed
 	}
 
-	// Verify unrealized P&L consistency (API value vs calculated from positions)
-	// Note: Lighter API may return 0 for unrealized PnL, this is a known limitation
-	diff := math.Abs(totalUnrealizedProfit - totalUnrealizedPnLCalculated)
-	if diff > 5.0 { // Only warn if difference is significant (> 5 USDT)
-		logger.Infof("⚠️ Unrealized P&L inconsistency (Lighter API limitation): API=%.4f, Calculated=%.4f, Diff=%.4f",
-			totalUnrealizedProfit, totalUnrealizedPnLCalculated, diff)
-	}
-
-	totalPnL := totalEquity - at.initialBalance
+	// Calculate P&L based on isolated balance
+	totalPnL := isolatedBalance.TotalEquity - at.initialBalance
 	totalPnLPct := 0.0
 	if at.initialBalance > 0 {
 		totalPnLPct = (totalPnL / at.initialBalance) * 100
@@ -1685,27 +1660,36 @@ func (at *AutoTrader) GetAccountInfo() (map[string]interface{}, error) {
 	}
 
 	marginUsedPct := 0.0
-	if totalEquity > 0 {
-		marginUsedPct = (totalMarginUsed / totalEquity) * 100
+	if isolatedBalance.TotalEquity > 0 {
+		marginUsedPct = (isolatedBalance.UsedMargin / isolatedBalance.TotalEquity) * 100
+	}
+
+	// Get filtered position count
+	positions, err := at.getFilteredPositions()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get positions: %w", err)
 	}
 
 	return map[string]interface{}{
-		// Core fields
-		"total_equity":      totalEquity,           // Account equity = wallet + unrealized
-		"wallet_balance":    totalWalletBalance,    // Wallet balance (excluding unrealized P&L)
-		"unrealized_profit": totalUnrealizedProfit, // Unrealized P&L (official value from exchange API)
-		"available_balance": availableBalance,      // Available balance
+		// Isolated balance fields (primary - used for trading decisions)
+		"total_equity":      isolatedBalance.TotalEquity,       // Isolated equity = InitialBalance + RealizedPnL + UnrealizedPnL
+		"realized_pnl":      isolatedBalance.RealizedPnL,       // Realized P&L from closed positions
+		"unrealized_profit": isolatedBalance.UnrealizedPnL,     // Unrealized P&L from own positions
+		"available_balance": isolatedBalance.AvailableBalance,  // Isolated available balance
+		"initial_balance":   at.initialBalance,                 // Initial allocated balance
 
 		// P&L statistics
-		"total_pnl":       totalPnL,          // Total P&L = equity - initial
-		"total_pnl_pct":   totalPnLPct,       // Total P&L percentage
-		"initial_balance": at.initialBalance, // Initial balance
-		"daily_pnl":       at.dailyPnL,       // Daily P&L
+		"total_pnl":     totalPnL,    // Total P&L = equity - initial
+		"total_pnl_pct": totalPnLPct, // Total P&L percentage
+		"daily_pnl":     at.dailyPnL, // Daily P&L
 
-		// Position information
-		"position_count":  len(positions),  // Position count
-		"margin_used":     totalMarginUsed, // Margin used
-		"margin_used_pct": marginUsedPct,   // Margin usage rate
+		// Position information (isolated)
+		"position_count":  len(positions),             // This trader's position count
+		"margin_used":     isolatedBalance.UsedMargin, // Margin used by this trader
+		"margin_used_pct": marginUsedPct,              // Margin usage rate (isolated)
+
+		// Exchange-level info (for reference only)
+		"exchange_total_equity": exchangeTotalEquity, // Full exchange balance (all traders)
 	}, nil
 }
 
@@ -1755,6 +1739,119 @@ func (at *AutoTrader) getFilteredPositions() ([]map[string]interface{}, error) {
 	}
 
 	return filteredPositions, nil
+}
+
+// calculateIsolatedBalance calculates the trader's isolated balance based on InitialBalance
+// This enforces balance isolation for multi-trader scenarios
+func (at *AutoTrader) calculateIsolatedBalance() (*IsolatedBalance, error) {
+	// Get this trader's filtered positions only
+	positions, err := at.getFilteredPositions()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get filtered positions: %w", err)
+	}
+
+	// Calculate unrealized P&L and used margin from OWN positions only
+	unrealizedPnL := 0.0
+	usedMargin := 0.0
+
+	for _, pos := range positions {
+		// Get unrealized profit
+		if upnl, ok := pos["unRealizedProfit"].(float64); ok {
+			unrealizedPnL += upnl
+		} else if upnl, ok := pos["unrealizedProfit"].(float64); ok {
+			unrealizedPnL += upnl
+		}
+
+		// Calculate margin used: (quantity * markPrice) / leverage
+		quantity := 0.0
+		if q, ok := pos["positionAmt"].(float64); ok {
+			quantity = q
+			if quantity < 0 {
+				quantity = -quantity
+			}
+		} else if q, ok := pos["quantity"].(float64); ok {
+			quantity = q
+			if quantity < 0 {
+				quantity = -quantity
+			}
+		}
+
+		markPrice := 0.0
+		if mp, ok := pos["markPrice"].(float64); ok {
+			markPrice = mp
+		}
+
+		leverage := 10.0 // default
+		if lev, ok := pos["leverage"].(float64); ok {
+			leverage = lev
+		}
+
+		if quantity > 0 && markPrice > 0 && leverage > 0 {
+			marginUsed := (quantity * markPrice) / leverage
+			usedMargin += marginUsed
+		}
+	}
+
+	// Get realized P&L from closed positions
+	realizedPnL := 0.0
+	if at.store != nil {
+		stats, err := at.store.Position().GetFullStats(at.id)
+		if err != nil {
+			logger.Infof("⚠️ [%s] Failed to get realized P&L from closed positions: %v", at.name, err)
+		} else {
+			realizedPnL = stats.TotalPnL
+		}
+	}
+
+	// Calculate isolated balance metrics
+	// TotalEquity = InitialBalance + RealizedPnL (from closed positions) + UnrealizedPnL (from open positions)
+	totalEquity := at.initialBalance + realizedPnL + unrealizedPnL
+
+	// AvailableBalance = InitialBalance + RealizedPnL - UsedMargin
+	// Note: UnrealizedPnL is NOT available to open new positions (it's locked in open positions)
+	availableBalance := at.initialBalance + realizedPnL - usedMargin
+
+	// Safety: ensure available balance is not negative
+	if availableBalance < 0 {
+		availableBalance = 0
+	}
+
+	return &IsolatedBalance{
+		InitialBalance:   at.initialBalance,
+		RealizedPnL:      realizedPnL, // Total profit/loss from closed positions
+		UnrealizedPnL:    unrealizedPnL, // Current P&L from open positions
+		TotalEquity:      totalEquity,
+		UsedMargin:       usedMargin,
+		AvailableBalance: availableBalance,
+	}, nil
+}
+
+// validateIsolatedPositionSize validates if a position size is within the trader's isolated balance limit
+func (at *AutoTrader) validateIsolatedPositionSize(positionSizeUSD float64, leverage int) error {
+	// Get trader's isolated balance
+	isolatedBalance, err := at.calculateIsolatedBalance()
+	if err != nil {
+		return fmt.Errorf("failed to calculate isolated balance: %w", err)
+	}
+
+	// Calculate required margin for this position
+	requiredMargin := positionSizeUSD / float64(leverage)
+
+	// Check if trader has enough available balance
+	if requiredMargin > isolatedBalance.AvailableBalance {
+		return fmt.Errorf(
+			"position size %.2f USD exceeds isolated available balance %.2f USD (required margin: %.2f USD, InitialBalance: %.2f USD)",
+			positionSizeUSD,
+			isolatedBalance.AvailableBalance,
+			requiredMargin,
+			isolatedBalance.InitialBalance,
+		)
+	}
+
+	logger.Infof("✅ [%s] Position size validation passed: %.2f USD (margin: %.2f USD), available: %.2f USD (InitialBalance: %.2f USD)",
+		at.name, positionSizeUSD, requiredMargin, isolatedBalance.AvailableBalance, isolatedBalance.InitialBalance)
+
+	return nil
 }
 
 // GetPositions gets position list (for API)

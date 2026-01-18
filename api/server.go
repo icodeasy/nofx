@@ -213,6 +213,169 @@ func (s *Server) setupRoutes() {
 	}
 }
 
+// validateInitialBalanceForExchange validates if the requested InitialBalance is valid
+// Returns: (isValid, adjustedBalance, exchangeTotalEquity, errorMessage)
+// - isValid: whether the balance is valid
+// - adjustedBalance: the balance that should be used (may be capped)
+// - exchangeTotalEquity: total equity in the exchange
+// - errorMessage: error message if invalid
+func (s *Server) validateInitialBalanceForExchange(userID, exchangeID string, requestedBalance float64, excludeTraderID string) (bool, float64, float64, string) {
+	// Get all traders for this user to calculate total allocated balance
+	traders, err := s.store.Trader().List(userID)
+	if err != nil {
+		return false, requestedBalance, 0, fmt.Sprintf("Failed to get trader list: %v", err)
+	}
+
+	// Calculate total allocated balance for this exchange (excluding the current trader if updating)
+	totalAllocated := 0.0
+	for _, t := range traders {
+		// Skip the trader being updated (if provided)
+		if excludeTraderID != "" && t.ID == excludeTraderID {
+			continue
+		}
+		// Only count traders with the same exchange ID
+		if t.ExchangeID == exchangeID {
+			totalAllocated += t.InitialBalance
+		}
+	}
+
+	// Get exchange configuration
+	fullConfig, err := s.store.Trader().GetFullConfig(userID, "")
+	if err != nil {
+		return false, requestedBalance, 0, fmt.Sprintf("Failed to get exchange config: %v", err)
+	}
+
+	var exchangeCfg *store.Exchange
+	if fullConfig.Exchange != nil && fullConfig.Exchange.ID == exchangeID {
+		exchangeCfg = fullConfig.Exchange
+	} else {
+		// Try to get exchange from exchange store
+		exchanges, listErr := s.store.Exchange().List(userID)
+		if listErr != nil {
+			return false, requestedBalance, 0, fmt.Sprintf("Failed to get exchange list: %v", listErr)
+		}
+		for _, ex := range exchanges {
+			if ex.ID == exchangeID {
+				exchangeCfg = ex
+				break
+			}
+		}
+	}
+
+	if exchangeCfg == nil {
+		// Can't validate exchange balance, allow user input
+		logger.Infof("⚠️ Exchange config not found for %s, allowing user input", exchangeID)
+		return true, requestedBalance, 0, ""
+	}
+
+	if !exchangeCfg.Enabled {
+		// Exchange not enabled, can't validate
+		logger.Infof("⚠️ Exchange %s not enabled, allowing user input", exchangeID)
+		return true, requestedBalance, 0, ""
+	}
+
+	// Query actual exchange balance
+	var tempTrader trader.Trader
+	var createErr error
+
+	switch exchangeCfg.ExchangeType {
+	case "binance":
+		tempTrader = trader.NewFuturesTrader(string(exchangeCfg.APIKey), string(exchangeCfg.SecretKey), "validation")
+	case "hyperliquid":
+		tempTrader, createErr = trader.NewHyperliquidTrader(
+			string(exchangeCfg.APIKey),
+			exchangeCfg.HyperliquidWalletAddr,
+			exchangeCfg.Testnet,
+		)
+	case "aster":
+		tempTrader, createErr = trader.NewAsterTrader(
+			exchangeCfg.AsterUser,
+			exchangeCfg.AsterSigner,
+			string(exchangeCfg.AsterPrivateKey),
+		)
+	case "bybit":
+		tempTrader = trader.NewBybitTrader(
+			string(exchangeCfg.APIKey),
+			string(exchangeCfg.SecretKey),
+			"validation",
+		)
+	case "okx":
+		tempTrader = trader.NewOKXTrader(
+			string(exchangeCfg.APIKey),
+			string(exchangeCfg.SecretKey),
+			string(exchangeCfg.Passphrase),
+			"validation",
+		)
+	case "bitget":
+		tempTrader = trader.NewBitgetTrader(
+			string(exchangeCfg.APIKey),
+			string(exchangeCfg.SecretKey),
+			string(exchangeCfg.Passphrase),
+		)
+	case "lighter":
+		if exchangeCfg.LighterWalletAddr != "" && string(exchangeCfg.LighterAPIKeyPrivateKey) != "" {
+			tempTrader, createErr = trader.NewLighterTraderV2(
+				exchangeCfg.LighterWalletAddr,
+				string(exchangeCfg.LighterAPIKeyPrivateKey),
+				exchangeCfg.LighterAPIKeyIndex,
+				false,
+			)
+		}
+	default:
+		logger.Infof("⚠️ Unsupported exchange type: %s, allowing user input", exchangeCfg.ExchangeType)
+		return true, requestedBalance, 0, ""
+	}
+
+	if createErr != nil {
+		logger.Infof("⚠️ Failed to create temporary trader: %v, allowing user input", createErr)
+		return true, requestedBalance, 0, ""
+	}
+
+	if tempTrader == nil {
+		logger.Infof("⚠️ Failed to create temporary trader, allowing user input")
+		return true, requestedBalance, 0, ""
+	}
+
+	// Get actual exchange balance
+	balanceInfo, err := tempTrader.GetBalance()
+	if err != nil {
+		logger.Infof("⚠️ Failed to query exchange balance: %v, allowing user input", err)
+		return true, requestedBalance, 0, ""
+	}
+
+	// Extract total equity
+	exchangeTotalEquity := 0.0
+	balanceKeys := []string{"total_equity", "totalWalletBalance", "wallet_balance", "totalEq", "balance"}
+	for _, key := range balanceKeys {
+		if balance, ok := balanceInfo[key].(float64); ok && balance > 0 {
+			exchangeTotalEquity = balance
+			break
+		}
+	}
+
+	if exchangeTotalEquity <= 0 {
+		logger.Infof("⚠️ Unable to extract total equity from balance info, allowing user input")
+		return true, requestedBalance, 0, ""
+	}
+
+	// Calculate available (unallocated) balance
+	availableBalance := exchangeTotalEquity - totalAllocated
+
+	logger.Infof("💰 Balance Validation: ExchangeTotal=%.2f, AlreadyAllocated=%.2f, Available=%.2f, Requested=%.2f",
+		exchangeTotalEquity, totalAllocated, availableBalance, requestedBalance)
+
+	// Validate: requested balance should not exceed available balance
+	if requestedBalance > availableBalance {
+		errorMsg := fmt.Sprintf("Requested InitialBalance (%.2f) exceeds available exchange balance (%.2f). Exchange total: %.2f, Already allocated to other traders: %.2f",
+			requestedBalance, availableBalance, exchangeTotalEquity, totalAllocated)
+		logger.Infof("❌ %s", errorMsg)
+		return false, availableBalance, exchangeTotalEquity, errorMsg
+	}
+
+	// Allow the requested balance
+	return true, requestedBalance, exchangeTotalEquity, ""
+}
+
 // handleHealth Health check
 func (s *Server) handleHealth(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
@@ -552,107 +715,24 @@ func (s *Server) handleCreateTrader(c *gin.Context) {
 		scanIntervalMinutes = 3 // Default 3 minutes, not allowed to be less than 3
 	}
 
-	// Query exchange actual balance, override user input
-	actualBalance := req.InitialBalance // Default to use user input
-	exchanges, err := s.store.Exchange().List(userID)
-	if err != nil {
-		logger.Infof("⚠️ Failed to get exchange config, using user input for initial balance: %v", err)
+	// Validate InitialBalance against exchange total balance and other traders' allocations
+	isValid, validatedBalance, exchangeTotalEquity, errorMsg := s.validateInitialBalanceForExchange(userID, req.ExchangeID, req.InitialBalance, "")
+	if !isValid {
+		logger.Infof("❌ InitialBalance validation failed: %s", errorMsg)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": errorMsg,
+			"requested_balance":       req.InitialBalance,
+			"max_available_balance":   validatedBalance,
+			"exchange_total_equity":   exchangeTotalEquity,
+		})
+		return
 	}
 
-	// Find matching exchange configuration
-	var exchangeCfg *store.Exchange
-	for _, ex := range exchanges {
-		if ex.ID == req.ExchangeID {
-			exchangeCfg = ex
-			break
-		}
-	}
-
-	if exchangeCfg == nil {
-		logger.Infof("⚠️ Exchange %s configuration not found, using user input for initial balance", req.ExchangeID)
-	} else if !exchangeCfg.Enabled {
-		logger.Infof("⚠️ Exchange %s not enabled, using user input for initial balance", req.ExchangeID)
+	actualBalance := validatedBalance
+	if exchangeTotalEquity > 0 {
+		logger.Infof("✅ InitialBalance validated: %.2f USDT (Exchange total: %.2f USDT)", actualBalance, exchangeTotalEquity)
 	} else {
-		// Create temporary trader based on exchange type to query balance
-		var tempTrader trader.Trader
-		var createErr error
-
-		// Use ExchangeType (e.g., "binance") instead of ID (UUID)
-		// Convert EncryptedString fields to string
-		switch exchangeCfg.ExchangeType {
-		case "binance":
-			tempTrader = trader.NewFuturesTrader(string(exchangeCfg.APIKey), string(exchangeCfg.SecretKey), traderID)
-		case "hyperliquid":
-			tempTrader, createErr = trader.NewHyperliquidTrader(
-				string(exchangeCfg.APIKey), // private key
-				exchangeCfg.HyperliquidWalletAddr,
-				exchangeCfg.Testnet,
-			)
-		case "aster":
-			tempTrader, createErr = trader.NewAsterTrader(
-				exchangeCfg.AsterUser,
-				exchangeCfg.AsterSigner,
-				string(exchangeCfg.AsterPrivateKey),
-			)
-		case "bybit":
-			tempTrader = trader.NewBybitTrader(
-				string(exchangeCfg.APIKey),
-				string(exchangeCfg.SecretKey),
-				traderID,
-			)
-		case "okx":
-			tempTrader = trader.NewOKXTrader(
-				string(exchangeCfg.APIKey),
-				string(exchangeCfg.SecretKey),
-				string(exchangeCfg.Passphrase),
-				traderID,
-			)
-		case "bitget":
-			tempTrader = trader.NewBitgetTrader(
-				string(exchangeCfg.APIKey),
-				string(exchangeCfg.SecretKey),
-				string(exchangeCfg.Passphrase),
-			)
-		case "lighter":
-			if exchangeCfg.LighterWalletAddr != "" && string(exchangeCfg.LighterAPIKeyPrivateKey) != "" {
-				// Lighter only supports mainnet
-				tempTrader, createErr = trader.NewLighterTraderV2(
-					exchangeCfg.LighterWalletAddr,
-					string(exchangeCfg.LighterAPIKeyPrivateKey),
-					exchangeCfg.LighterAPIKeyIndex,
-					false, // Always use mainnet for Lighter
-				)
-			} else {
-				createErr = fmt.Errorf("Lighter requires wallet address and API Key private key")
-			}
-		default:
-			logger.Infof("⚠️ Unsupported exchange type: %s, using user input for initial balance", exchangeCfg.ExchangeType)
-		}
-
-		if createErr != nil {
-			logger.Infof("⚠️ Failed to create temporary trader, using user input for initial balance: %v", createErr)
-		} else if tempTrader != nil {
-			// Query actual balance
-			balanceInfo, balanceErr := tempTrader.GetBalance()
-			if balanceErr != nil {
-				logger.Infof("⚠️ Failed to query exchange balance, using user input for initial balance: %v", balanceErr)
-			} else {
-				// Extract total equity (account total value = wallet balance + unrealized PnL)
-				// Priority: total_equity > totalWalletBalance > wallet_balance > totalEq > balance
-				// Note: Must use total_equity (not availableBalance) for accurate P&L calculation
-				balanceKeys := []string{"total_equity", "totalWalletBalance", "wallet_balance", "totalEq", "balance"}
-				for _, key := range balanceKeys {
-					if balance, ok := balanceInfo[key].(float64); ok && balance > 0 {
-						actualBalance = balance
-						logger.Infof("✓ Queried exchange total equity (%s): %.2f USDT (user input: %.2f USDT)", key, actualBalance, req.InitialBalance)
-						break
-					}
-				}
-				if actualBalance <= 0 {
-					logger.Infof("⚠️ Unable to extract total equity from balance info, balanceInfo=%v, using user input for initial balance", balanceInfo)
-				}
-			}
-		}
+		logger.Infof("✅ InitialBalance set to user input: %.2f USDT (exchange balance unavailable)", actualBalance)
 	}
 
 	// Create trader configuration (database entity)
@@ -681,7 +761,7 @@ func (s *Server) handleCreateTrader(c *gin.Context) {
 
 	// Save to database
 	logger.Infof("🔧 DEBUG: Preparing to call CreateTrader")
-	err = s.store.Trader().Create(traderRecord)
+	err := s.store.Trader().Create(traderRecord)
 	if err != nil {
 		logger.Infof("❌ Failed to create trader: %v", err)
 		SafeInternalError(c, "Failed to create trader", err)
@@ -801,6 +881,28 @@ func (s *Server) handleUpdateTrader(c *gin.Context) {
 		strategyID = existingTrader.StrategyID
 	}
 
+	// Validate InitialBalance if it's being changed
+	validatedBalance := req.InitialBalance
+	if req.InitialBalance > 0 && req.InitialBalance != existingTrader.InitialBalance {
+		// InitialBalance is being updated, validate it
+		isValid, availableBalance, exchangeTotalEquity, errorMsg := s.validateInitialBalanceForExchange(userID, req.ExchangeID, req.InitialBalance, traderID)
+		if !isValid {
+			logger.Infof("❌ InitialBalance validation failed: %s", errorMsg)
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": errorMsg,
+				"requested_balance":       req.InitialBalance,
+				"max_available_balance":   availableBalance,
+				"exchange_total_equity":   exchangeTotalEquity,
+			})
+			return
+		}
+		validatedBalance = availableBalance
+		logger.Infof("✅ InitialBalance validated for update: %.2f USDT (Exchange total: %.2f USDT)", validatedBalance, exchangeTotalEquity)
+	} else if req.InitialBalance == 0 {
+		// Keep existing balance if not provided
+		validatedBalance = existingTrader.InitialBalance
+	}
+
 	// Update trader configuration
 	traderRecord := &store.Trader{
 		ID:                   traderID,
@@ -809,7 +911,7 @@ func (s *Server) handleUpdateTrader(c *gin.Context) {
 		AIModelID:            req.AIModelID,
 		ExchangeID:           req.ExchangeID,
 		StrategyID:           strategyID, // Associated strategy ID
-		InitialBalance:       req.InitialBalance,
+		InitialBalance:       validatedBalance, // Use validated balance
 		BTCETHLeverage:       btcEthLeverage,
 		AltcoinLeverage:      altcoinLeverage,
 		TradingSymbols:       req.TradingSymbols,
