@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"nofx/kernel"
 	"nofx/experience"
+	"nofx/kernel"
 	"nofx/logger"
 	"nofx/market"
 	"nofx/mcp"
@@ -35,13 +35,13 @@ type AutoTraderConfig struct {
 	BybitSecretKey string
 
 	// OKX API configuration
-	OKXAPIKey    string
-	OKXSecretKey string
+	OKXAPIKey     string
+	OKXSecretKey  string
 	OKXPassphrase string
 
 	// Bitget API configuration
-	BitgetAPIKey    string
-	BitgetSecretKey string
+	BitgetAPIKey     string
+	BitgetSecretKey  string
 	BitgetPassphrase string
 
 	// Hyperliquid configuration
@@ -103,9 +103,9 @@ type AutoTrader struct {
 	config                AutoTraderConfig
 	trader                Trader // Use Trader interface (supports multiple platforms)
 	mcpClient             mcp.AIClient
-	store                 *store.Store             // Data storage (decision records, etc.)
+	store                 *store.Store           // Data storage (decision records, etc.)
 	strategyEngine        *kernel.StrategyEngine // Strategy engine (uses strategy configuration)
-	cycleNumber           int                      // Current cycle number
+	cycleNumber           int                    // Current cycle number
 	initialBalance        float64
 	dailyPnL              float64
 	customPrompt          string // Custom trading strategy prompt
@@ -304,6 +304,24 @@ func NewAutoTrader(config AutoTraderConfig, st *store.Store, userID string) (*Au
 	if st != nil {
 		cycleNumber, _ = st.Decision().GetLastCycleNumber(config.ID)
 		logger.Infof("📊 [%s] Decision records will be stored to database", config.Name)
+	}
+
+	// Validate trader ID uniqueness to prevent position isolation issues
+	// If multiple traders use the same ID, they will interfere with each other
+	if st != nil {
+		allOpenPositions, err := st.Position().GetAllOpenPositions()
+		if err == nil && len(allOpenPositions) > 0 {
+			// Check if any existing positions have this trader ID
+			for _, pos := range allOpenPositions {
+				if pos.TraderID == config.ID {
+					logger.Warnf("⚠️  [%s] Trader ID '%s' already has open positions in database", config.Name, config.ID)
+					logger.Warnf("⚠️  This suggests another trader instance with the same ID may have been running previously")
+					logger.Warnf("⚠️  If you're starting a new trader, use a UNIQUE ID to avoid position isolation issues")
+					logger.Warnf("⚠️  Existing position: %s %s %.6f @ %.2f", pos.Symbol, pos.Side, pos.Quantity, pos.EntryPrice)
+					// Don't fail startup, just warn - user might be restarting the same trader
+				}
+			}
+		}
 	}
 
 	// Create strategy engine (must have strategy config)
@@ -1261,18 +1279,49 @@ func (at *AutoTrader) executeCloseLongWithRecord(decision *kernel.Decision, acti
 		}
 	}
 
-	// POSITION ISOLATION: If position not found in local DB, it belongs to another trader
-	// Check exchange API to confirm, but skip closing if not owned by this trader
+	// POSITION ISOLATION: If position not found in local DB, verify ownership before closing
+	// This prevents multiple traders sharing the same account from interfering with each other
 	if !foundInLocalDB {
 		positions, err := at.trader.GetPositions()
 		if err == nil {
 			for _, pos := range positions {
-				if pos["symbol"] == decision.Symbol && pos["side"] == "long" {
-					// Position exists on exchange but not in our local DB
-					// This means it belongs to another trader sharing the same account
-					logger.Infof("  ⚠️ Position %s LONG exists on exchange but not in local database", decision.Symbol)
-					logger.Infof("  ⚠️ This position belongs to another trader - skipping close to prevent interference")
-					return fmt.Errorf("position not owned by this trader - skipping close")
+				// Fix: Normalize side comparison (handle both "long" and "LONG")
+				posSide, _ := pos["side"].(string)
+				posSideUpper := strings.ToUpper(posSide)
+
+				if pos["symbol"] == decision.Symbol && posSideUpper == "LONG" {
+					// Position exists on exchange but not in this trader's local DB
+					// Check if another trader with the same exchangeID owns this position
+					if at.store != nil {
+						allOpenPositions, err := at.store.Position().GetAllOpenPositions()
+						if err == nil {
+							for _, dbPos := range allOpenPositions {
+								// Only look at positions with the same exchange account and symbol/side
+								if dbPos.ExchangeID == at.exchangeID &&
+									dbPos.Symbol == normalizedSymbol &&
+									dbPos.Side == "LONG" &&
+									dbPos.Status == "OPEN" {
+									// Found a position with same exchange/symbol/side
+									if dbPos.TraderID != at.id {
+										// Position belongs to a DIFFERENT trader with same exchange account
+										logger.Infof("  ⚠️ Position %s LONG exists on exchange but belongs to trader_id=%s (current: %s)",
+											decision.Symbol, dbPos.TraderID, at.id)
+										logger.Infof("  ⚠️ Skipping close to prevent interference")
+										return fmt.Errorf("position not owned by this trader - skipping close")
+									}
+								}
+							}
+						}
+					}
+
+					// Position exists on exchange, not found in any other trader's DB
+					// It's either:
+					// 1. Owned by current trader but DB sync issue (GetOpenPositionBySymbol missed it)
+					// 2. Externally opened position
+					logger.Warnf("  ⚠️ Position %s LONG exists on exchange but not found in local DB", decision.Symbol)
+					logger.Warnf("  ⚠️ Possible DB sync issue, symbol normalization mismatch, or externally opened position")
+					logger.Warnf("  ⚠️ Use position snapshot to sync: CreatePositionSnapshot(%s, %s, %s, ...)", at.id, at.exchangeID, at.exchange)
+					return fmt.Errorf("position not owned by this trader - skipping close (possible DB sync issue)")
 				}
 			}
 		}
@@ -1347,18 +1396,49 @@ func (at *AutoTrader) executeCloseShortWithRecord(decision *kernel.Decision, act
 		}
 	}
 
-	// POSITION ISOLATION: If position not found in local DB, it belongs to another trader
-	// Check exchange API to confirm, but skip closing if not owned by this trader
+	// POSITION ISOLATION: If position not found in local DB, verify ownership before closing
+	// This prevents multiple traders sharing the same account from interfering with each other
 	if !foundInLocalDB {
 		positions, err := at.trader.GetPositions()
 		if err == nil {
 			for _, pos := range positions {
-				if pos["symbol"] == decision.Symbol && pos["side"] == "short" {
-					// Position exists on exchange but not in our local DB
-					// This means it belongs to another trader sharing the same account
-					logger.Infof("  ⚠️ Position %s SHORT exists on exchange but not in local database", decision.Symbol)
-					logger.Infof("  ⚠️ This position belongs to another trader - skipping close to prevent interference")
-					return fmt.Errorf("position not owned by this trader - skipping close")
+				// Fix: Normalize side comparison (handle both "short" and "SHORT")
+				posSide, _ := pos["side"].(string)
+				posSideUpper := strings.ToUpper(posSide)
+
+				if pos["symbol"] == decision.Symbol && posSideUpper == "SHORT" {
+					// Position exists on exchange but not in this trader's local DB
+					// Check if another trader with the same exchangeID owns this position
+					if at.store != nil {
+						allOpenPositions, err := at.store.Position().GetAllOpenPositions()
+						if err == nil {
+							for _, dbPos := range allOpenPositions {
+								// Only look at positions with the same exchange account and symbol/side
+								if dbPos.ExchangeID == at.exchangeID &&
+									dbPos.Symbol == normalizedSymbol &&
+									dbPos.Side == "SHORT" &&
+									dbPos.Status == "OPEN" {
+									// Found a position with same exchange/symbol/side
+									if dbPos.TraderID != at.id {
+										// Position belongs to a DIFFERENT trader with same exchange account
+										logger.Infof("  ⚠️ Position %s SHORT exists on exchange but belongs to trader_id=%s (current: %s)",
+											decision.Symbol, dbPos.TraderID, at.id)
+										logger.Infof("  ⚠️ Skipping close to prevent interference")
+										return fmt.Errorf("position not owned by this trader - skipping close")
+									}
+								}
+							}
+						}
+					}
+
+					// Position exists on exchange, not found in any other trader's DB
+					// It's either:
+					// 1. Owned by current trader but DB sync issue (GetOpenPositionBySymbol missed it)
+					// 2. Externally opened position
+					logger.Warnf("  ⚠️ Position %s SHORT exists on exchange but not found in local DB", decision.Symbol)
+					logger.Warnf("  ⚠️ Possible DB sync issue, symbol normalization mismatch, or externally opened position")
+					logger.Warnf("  ⚠️ Use position snapshot to sync: CreatePositionSnapshot(%s, %s, %s, ...)", at.id, at.exchangeID, at.exchange)
+					return fmt.Errorf("position not owned by this trader - skipping close (possible DB sync issue)")
 				}
 			}
 		}
@@ -2168,22 +2248,22 @@ func (at *AutoTrader) recordOrderFill(orderRecordID int64, exchangeOrderID, symb
 	normalizedSymbol := market.Normalize(symbol)
 
 	fill := &store.TraderFill{
-		TraderID:         at.id,
-		ExchangeID:       at.exchangeID,
-		ExchangeType:     at.exchange,
-		OrderID:          orderRecordID,
-		ExchangeOrderID:  exchangeOrderID,
-		ExchangeTradeID:  tradeID,
-		Symbol:           normalizedSymbol,
-		Side:             side,
-		Price:            price,
-		Quantity:         quantity,
-		QuoteQuantity:    price * quantity,
-		Commission:       fee,
-		CommissionAsset:  "USDT",
-		RealizedPnL:      0, // Will be calculated for close orders
-		IsMaker:          false, // Market orders are usually taker
-		CreatedAt:        time.Now(),
+		TraderID:        at.id,
+		ExchangeID:      at.exchangeID,
+		ExchangeType:    at.exchange,
+		OrderID:         orderRecordID,
+		ExchangeOrderID: exchangeOrderID,
+		ExchangeTradeID: tradeID,
+		Symbol:          normalizedSymbol,
+		Side:            side,
+		Price:           price,
+		Quantity:        quantity,
+		QuoteQuantity:   price * quantity,
+		Commission:      fee,
+		CommissionAsset: "USDT",
+		RealizedPnL:     0,     // Will be calculated for close orders
+		IsMaker:         false, // Market orders are usually taker
+		CreatedAt:       time.Now(),
 	}
 
 	// Calculate realized PnL for close orders
@@ -2306,4 +2386,3 @@ func getSideFromAction(action string) string {
 		return "BUY"
 	}
 }
-
