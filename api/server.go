@@ -239,26 +239,17 @@ func (s *Server) validateInitialBalanceForExchange(userID, exchangeID string, re
 		}
 	}
 
-	// Get exchange configuration
-	fullConfig, err := s.store.Trader().GetFullConfig(userID, "")
-	if err != nil {
-		return false, requestedBalance, 0, fmt.Sprintf("Failed to get exchange config: %v", err)
-	}
-
+	// Get exchange configuration directly from exchange store
 	var exchangeCfg *store.Exchange
-	if fullConfig.Exchange != nil && fullConfig.Exchange.ID == exchangeID {
-		exchangeCfg = fullConfig.Exchange
-	} else {
-		// Try to get exchange from exchange store
-		exchanges, listErr := s.store.Exchange().List(userID)
-		if listErr != nil {
-			return false, requestedBalance, 0, fmt.Sprintf("Failed to get exchange list: %v", listErr)
-		}
-		for _, ex := range exchanges {
-			if ex.ID == exchangeID {
-				exchangeCfg = ex
-				break
-			}
+	exchanges, listErr := s.store.Exchange().List(userID)
+	if listErr != nil {
+		logger.Infof("⚠️ Failed to get exchange list: %v, allowing user input", listErr)
+		return true, requestedBalance, 0, ""
+	}
+	for _, ex := range exchanges {
+		if ex.ID == exchangeID {
+			exchangeCfg = ex
+			break
 		}
 	}
 
