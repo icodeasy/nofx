@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion'
-import { MessageCircle, Heart, Repeat2, ExternalLink } from 'lucide-react'
+import { MessageCircle, Heart, Repeat2, ExternalLink, Github } from 'lucide-react'
 import { Language } from '../../i18n/translations'
+import { OFFICIAL_LINKS } from '../../constants/branding'
 
 interface TweetProps {
   quote: string
@@ -136,20 +137,18 @@ export default function CommunitySection({ language }: CommunitySectionProps) {
           viewport={{ once: true }}
         >
           <a
-            href="https://twitter.com/nofx_official"
+            href={OFFICIAL_LINKS.github}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-all hover:scale-105"
             style={{
-              background: 'rgba(29, 161, 242, 0.1)',
-              color: '#1DA1F2',
-              border: '1px solid rgba(29, 161, 242, 0.3)',
+              background: 'rgba(240, 185, 11, 0.1)',
+              color: '#F0B90B',
+              border: '1px solid rgba(240, 185, 11, 0.3)',
             }}
           >
-            <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor">
-              <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-            </svg>
-            {language === 'zh' ? '关注我们的 X' : 'Follow us on X'}
+            <Github className="w-5 h-5" />
+            {language === 'zh' ? '在 GitHub 上查看我们' : 'Check us out on GitHub'}
           </a>
         </motion.div>
       </div>

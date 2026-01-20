@@ -244,46 +244,12 @@ export default function TerminalHero() {
                     {/* 3D Hologram Effect Container */}
                     <div className="relative w-full h-[90%] flex items-center justify-center transform-style-3d rotate-y-[-12deg]">
 
-                        {/* Scanning Grid behind Mascot - Mobile Optimized */}
+                        {/* Scanning Grid - Mobile Optimized */}
                         <div className="absolute inset-x-0 top-[10%] bottom-[10%] bg-[linear-gradient(rgba(0,240,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(0,240,255,0.05)_1px,transparent_1px)] bg-[size:20px_20px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_80%)] mobile-grid-pulse"></div>
 
-                        {/* The Mascot Image with Glitch/Holo Effects */}
+                        {/* Holographic Display Area */}
                         <div className="relative z-10 w-full h-full opacity-100 transition-all duration-500 group flex flex-col justify-end pointer-events-auto">
                             <div className="absolute inset-x-0 bottom-0 top-1/2 bg-nofx-accent/5 blur-[60px] rounded-full animate-pulse-slow transition-colors duration-500 group-hover:bg-nofx-gold/20"></div>
-
-                            {/* Mobile Holo-Portrait Style - Full Color & Optimized & Premium Desktop */}
-                            <div className="relative w-full h-full flex items-end justify-center">
-                                <img
-                                    src="/images/nofx_mascot.png"
-                                    alt="Agent NoFX"
-                                    className="w-full h-full object-contain object-bottom char-premium-effects animate-breath-mobile transition-all duration-500"
-                                    style={{
-                                        maskImage: 'radial-gradient(ellipse at center, black 60%, transparent 100%), linear-gradient(to bottom, black 0%, black 85%, transparent 100%)',
-                                        WebkitMaskImage: 'radial-gradient(ellipse at center, black 60%, transparent 100%), linear-gradient(to bottom, black 0%, black 85%, transparent 100%)',
-                                        maskComposite: 'intersect',
-                                        WebkitMaskComposite: 'source-in'
-                                    }}
-                                />
-                                {/* Dynamic Holographic Overlay - Premium Noise & Gradient */}
-                                <div className="absolute inset-0 w-full h-full holo-overlay animate-holo opacity-80 pointer-events-none"
-                                    style={{
-                                        maskImage: 'url(/images/nofx_mascot.png)',
-                                        WebkitMaskImage: 'url(/images/nofx_mascot.png)',
-                                        maskSize: 'contain',
-                                        WebkitMaskSize: 'contain',
-                                        maskPosition: 'bottom center',
-                                        WebkitMaskPosition: 'bottom center',
-                                        maskRepeat: 'no-repeat',
-                                        WebkitMaskRepeat: 'no-repeat'
-                                    }}
-                                />
-                            </div>
-
-                            {/* Holo Scan Line - Subtle on Mobile */}
-                            <div className="absolute w-full h-1 bg-nofx-accent/30 drop-shadow-[0_0_10px_rgba(0,240,255,0.8)] top-0 animate-scan-fast pointer-events-none mix-blend-overlay"></div>
-
-                            {/* Mobile Glitch Overlay - Reduced Intensity */}
-                            <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 mix-blend-overlay md:hidden animate-pulse-fast"></div>
                         </div>
                     </div>
 
@@ -364,18 +330,11 @@ function CommunityStats() {
             icon: Users,
             color: 'text-green-400',
             href: `${OFFICIAL_LINKS.github}/graphs/contributors`
-        },
-        {
-            label: 'DEV COMMUNITY',
-            value: '5,800+', // Hardcoded as per user request
-            icon: MessageCircle,
-            color: 'text-blue-500',
-            href: OFFICIAL_LINKS.telegram
         }
     ]
 
     return (
-        <div className="mt-12 grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-4xl">
+        <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-4xl">
             {stats.map((stat, i) => (
                 <a
                     key={i}
