@@ -348,6 +348,11 @@ function App() {
   if (route === '/register') {
     return <RegisterPage />
   }
+  if (route === '/reset-password') {
+    return <ResetPasswordPage />
+  }
+
+  // FAQ page is publicly accessible
   if (route === '/faq') {
     return (
       <div
@@ -373,8 +378,12 @@ function App() {
       </div>
     )
   }
-  if (route === '/reset-password') {
-    return <ResetPasswordPage />
+
+  // Redirect unauthenticated users to login page (except for FAQ and auth pages)
+  if (!user || !token) {
+    // Redirect to login page
+    window.history.replaceState({}, '', '/login')
+    return <LoginPage />
   }
   // Data page - publicly accessible with embedded dashboard
   if (route === '/data') {
@@ -421,14 +430,12 @@ function App() {
       </div>
     )
   }
-  // Show landing page for root route
-  if (route === '/' || route === '') {
-    return <LandingPage />
-  }
 
-  // Redirect unauthenticated users to landing page
-  if (!user || !token) {
-    return <LandingPage />
+  // Authenticated user visiting root path - redirect to competition (default page)
+  if (route === '/' || route === '') {
+    window.history.replaceState({}, '', '/competition')
+    setRoute('/competition')
+    setCurrentPage('competition')
   }
 
   return (
