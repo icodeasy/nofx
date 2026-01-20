@@ -969,6 +969,8 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 		accountEquity*btcEthPosValueRatio, accountEquity, btcEthPosValueRatio))
 	sb.WriteString(fmt.Sprintf("- Max Margin Usage: ≤%.0f%%\n", riskControl.MaxMarginUsage*100))
 	sb.WriteString(fmt.Sprintf("- Min Position Size: ≥%.0f USDT\n\n", riskControl.MinPositionSize))
+	sb.WriteString(fmt.Sprintf("**CRITICAL WARNING**: Any opening decision with position_size_usd < %.0f USDT will be REJECTED by backend validation. ", riskControl.MinPositionSize))
+	sb.WriteString(fmt.Sprintf("You MUST ensure position_size_usd >= %.0f USDT for ALL open_long and open_short decisions.\n\n", riskControl.MinPositionSize))
 
 	sb.WriteString("## AI GUIDED (Recommended, you should follow):\n")
 	sb.WriteString(fmt.Sprintf("- Trading Leverage: Altcoins max %dx | BTC/ETH max %dx\n",
@@ -984,7 +986,8 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 	sb.WriteString("- Low confidence (60-69): Use 30-50%% of max position value limit\n")
 	sb.WriteString(fmt.Sprintf("- Example: With equity %.0f and BTC/ETH ratio %.1fx, max is %.0f USDT\n",
 		accountEquity, btcEthPosValueRatio, accountEquity*btcEthPosValueRatio))
-	sb.WriteString("- **DO NOT** just use available_balance as position_size_usd. Use the Position Value Limits!\n\n")
+	sb.WriteString("- **DO NOT** just use available_balance as position_size_usd. Use the Position Value Limits!\n")
+	sb.WriteString(fmt.Sprintf("- **MANDATORY**: position_size_usd must be ≥ %.0f USDT. Smaller positions will be REJECTED.\n\n", riskControl.MinPositionSize))
 
 	// 4. Trading frequency (editable)
 	if promptSections.TradingFrequency != "" {
