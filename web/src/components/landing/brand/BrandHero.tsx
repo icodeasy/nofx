@@ -75,7 +75,7 @@ export default function BrandHero() {
                     </motion.div>
                 </div>
 
-                {/* Right Visual - Mascot */}
+                {/* Right Visual */}
                 <div className="flex-1 relative flex items-end justify-center lg:justify-end overflow-hidden">
                     {/* Abstract background elements */}
                     <div className="absolute top-1/4 right-0 w-[600px] h-[600px] bg-nofx-accent/20 rounded-full blur-[100px] pointer-events-none" />
@@ -88,19 +88,6 @@ export default function BrandHero() {
                             backgroundSize: '40px 40px'
                         }}
                     />
-
-                    <motion.div
-                        initial={{ opacity: 0, y: 100 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 1, delay: 0.2 }}
-                        className="relative z-10 w-full h-full flex items-end justify-center lg:justify-end lg:pr-10"
-                    >
-                        <img
-                            src="/images/nofx_mascot.png"
-                            alt="Cyberpunk Mascot"
-                            className="h-[80vh] object-contain drop-shadow-[0_0_50px_rgba(0,0,0,0.5)]"
-                        />
-                    </motion.div>
                 </div>
             </div>
         </section>
