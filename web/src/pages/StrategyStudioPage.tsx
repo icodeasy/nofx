@@ -1137,7 +1137,9 @@ export function StrategyStudioPage() {
                               </div>
                               <button
                                 onClick={() => {
-                                  openInNewTab(aiTestResult.user_prompt, 'User Prompt - AI Test Result')
+                                  if (aiTestResult.user_prompt) {
+                                    openInNewTab(aiTestResult.user_prompt, 'User Prompt - AI Test Result')
+                                  }
                                 }}
                                 className="text-[10px] px-2 py-1 rounded hover:bg-blue-600/30 transition-colors text-blue-400 border border-blue-400/30"
                                 title="Open in new tab"
@@ -1164,7 +1166,9 @@ export function StrategyStudioPage() {
                               </div>
                               <button
                                 onClick={() => {
-                                  openInNewTab(aiTestResult.reasoning, 'AI Reasoning - Test Result')
+                                  if (aiTestResult.reasoning) {
+                                    openInNewTab(aiTestResult.reasoning, 'AI Reasoning - Test Result')
+                                  }
                                 }}
                                 className="text-[10px] px-2 py-1 rounded hover:bg-nofx-gold/30 transition-colors text-nofx-gold border border-nofx-gold/30"
                                 title="Open in new tab"
