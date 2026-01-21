@@ -32,6 +32,7 @@ import {
 } from 'lucide-react'
 import type { Strategy, StrategyConfig, AIModel } from '../types'
 import { confirmToast, notify } from '../lib/notify'
+import { openInNewTab } from '../lib/copy'
 import { CoinSourceEditor } from '../components/strategy/CoinSourceEditor'
 import { IndicatorEditor } from '../components/strategy/IndicatorEditor'
 import { RiskControlEditor } from '../components/strategy/RiskControlEditor'
@@ -917,9 +918,20 @@ export function StrategyStudioPage() {
                           <FileText className="w-3 h-3 text-purple-500" />
                           <span className="text-xs font-medium text-nofx-text">{t('systemPrompt')}</span>
                         </div>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-nofx-bg-lighter text-nofx-text-muted">
-                          {promptPreview.system_prompt.length.toLocaleString()} chars
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => {
+                              openInNewTab(promptPreview.system_prompt, 'System Prompt Preview')
+                            }}
+                            className="text-[10px] px-2 py-1 rounded hover:bg-purple-600/30 transition-colors flex items-center gap-1 text-purple-500 border border-purple-500/30"
+                            title="Open in new tab"
+                          >
+                            ⛶ Zoom
+                          </button>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-nofx-bg-lighter text-nofx-text-muted">
+                            {promptPreview.system_prompt.length.toLocaleString()} chars
+                          </span>
+                        </div>
                       </div>
                       <pre
                         className="p-2 rounded-lg text-[11px] font-mono overflow-auto bg-nofx-bg border border-nofx-gold/20 text-nofx-text"
@@ -1015,9 +1027,20 @@ export function StrategyStudioPage() {
                         {/* User Prompt Input */}
                         {aiTestResult.user_prompt && (
                           <div>
-                            <div className="flex items-center gap-1.5 mb-1.5">
-                              <Terminal className="w-3 h-3 text-blue-400" />
-                              <span className="text-xs font-medium text-nofx-text">{t('userPrompt')} (Input)</span>
+                            <div className="flex items-center justify-between mb-1.5">
+                              <div className="flex items-center gap-1.5">
+                                <Terminal className="w-3 h-3 text-blue-400" />
+                                <span className="text-xs font-medium text-nofx-text">{t('userPrompt')} (Input)</span>
+                              </div>
+                              <button
+                                onClick={() => {
+                                  openInNewTab(aiTestResult.user_prompt, 'User Prompt - AI Test Result')
+                                }}
+                                className="text-[10px] px-2 py-1 rounded hover:bg-blue-600/30 transition-colors text-blue-400 border border-blue-400/30"
+                                title="Open in new tab"
+                              >
+                                ⛶ Zoom
+                              </button>
                             </div>
                             <pre
                               className="p-2 rounded-lg text-[10px] font-mono overflow-auto bg-nofx-bg border border-nofx-gold/20 text-nofx-text"
@@ -1031,9 +1054,20 @@ export function StrategyStudioPage() {
                         {/* AI Reasoning */}
                         {aiTestResult.reasoning && (
                           <div>
-                            <div className="flex items-center gap-1.5 mb-1.5">
-                              <Sparkles className="w-3 h-3 text-nofx-gold" />
-                              <span className="text-xs font-medium text-nofx-text">{t('reasoning')}</span>
+                            <div className="flex items-center justify-between mb-1.5">
+                              <div className="flex items-center gap-1.5">
+                                <Sparkles className="w-3 h-3 text-nofx-gold" />
+                                <span className="text-xs font-medium text-nofx-text">{t('reasoning')}</span>
+                              </div>
+                              <button
+                                onClick={() => {
+                                  openInNewTab(aiTestResult.reasoning, 'AI Reasoning - Test Result')
+                                }}
+                                className="text-[10px] px-2 py-1 rounded hover:bg-nofx-gold/30 transition-colors text-nofx-gold border border-nofx-gold/30"
+                                title="Open in new tab"
+                              >
+                                ⛶ Zoom
+                              </button>
                             </div>
                             <pre
                               className="p-2 rounded-lg text-[10px] font-mono overflow-auto whitespace-pre-wrap bg-nofx-bg border border-nofx-gold/30 text-nofx-text"
