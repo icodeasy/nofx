@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { DecisionRecord, DecisionAction } from '../types'
 import { t, type Language } from '../i18n/translations'
+import { openInNewTab } from '../lib/copy'
 
 interface DecisionCardProps {
   decision: DecisionRecord
@@ -323,6 +324,17 @@ export function DecisionCard({ decision, language, onSymbolClick }: DecisionCard
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
+                    openInNewTab(decision.system_prompt, `System Prompt - Cycle #${decision.cycle_number}`)
+                  }}
+                  className="text-xs px-2.5 py-1 rounded hover:opacity-80 transition-opacity flex items-center gap-1"
+                  style={{ background: 'rgba(167, 139, 250, 0.2)', color: '#a78bfa', border: '1px solid rgba(167, 139, 250, 0.3)' }}
+                  title="Open in new tab"
+                >
+                  <span>⛶</span>
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
                     downloadAsFile(decision.system_prompt, `system-prompt-cycle-${decision.cycle_number}.txt`)
                   }}
                   className="text-xs px-2.5 py-1 rounded hover:opacity-80 transition-opacity flex items-center gap-1"
@@ -382,6 +394,17 @@ export function DecisionCard({ decision, language, onSymbolClick }: DecisionCard
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
+                    openInNewTab(decision.input_prompt, `User Prompt - Cycle #${decision.cycle_number}`)
+                  }}
+                  className="text-xs px-2.5 py-1 rounded hover:opacity-80 transition-opacity flex items-center gap-1"
+                  style={{ background: 'rgba(96, 165, 250, 0.2)', color: '#60a5fa', border: '1px solid rgba(96, 165, 250, 0.3)' }}
+                  title="Open in new tab"
+                >
+                  <span>⛶</span>
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
                     downloadAsFile(decision.input_prompt, `user-prompt-cycle-${decision.cycle_number}.txt`)
                   }}
                   className="text-xs px-2.5 py-1 rounded hover:opacity-80 transition-opacity flex items-center gap-1"
@@ -426,12 +449,36 @@ export function DecisionCard({ decision, language, onSymbolClick }: DecisionCard
                   {t('aiThinking', language)}
                 </span>
               </div>
-              <span
-                className="text-xs px-2 py-0.5 rounded"
-                style={{ background: 'rgba(240, 185, 11, 0.15)', color: '#F0B90B' }}
-              >
-                {showCoT ? t('collapse', language) : t('expand', language)}
-              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    copyToClipboard(decision.cot_trace, 'AI Thinking')
+                  }}
+                  className="text-xs px-2.5 py-1 rounded hover:opacity-80 transition-opacity flex items-center gap-1"
+                  style={{ background: 'rgba(240, 185, 11, 0.2)', color: '#F0B90B', border: '1px solid rgba(240, 185, 11, 0.3)' }}
+                  title="Copy to clipboard"
+                >
+                  <span>📋</span>
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    openInNewTab(decision.cot_trace, `AI Thinking - Cycle #${decision.cycle_number}`)
+                  }}
+                  className="text-xs px-2.5 py-1 rounded hover:opacity-80 transition-opacity flex items-center gap-1"
+                  style={{ background: 'rgba(240, 185, 11, 0.2)', color: '#F0B90B', border: '1px solid rgba(240, 185, 11, 0.3)' }}
+                  title="Open in new tab"
+                >
+                  <span>⛶</span>
+                </button>
+                <span
+                  className="text-xs px-2 py-0.5 rounded"
+                  style={{ background: 'rgba(240, 185, 11, 0.15)', color: '#F0B90B' }}
+                >
+                  {showCoT ? t('collapse', language) : t('expand', language)}
+                </span>
+              </div>
             </button>
             {showCoT && (
               <div
