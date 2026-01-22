@@ -2234,17 +2234,25 @@ func (s *Server) handlePositions(c *gin.Context) {
 		return
 	}
 
+	logger.Infof("📊 API: GetPositions called with trader_id='%s'", traderID)
+
 	trader, err := s.traderManager.GetTrader(traderID)
 	if err != nil {
+		logger.Infof("❌ Failed to get trader '%s': %v", traderID, err)
 		SafeNotFound(c, "Trader")
 		return
 	}
+
+	logger.Infof("📊 API: Loaded trader, internal ID='%s'", trader.GetID())
 
 	positions, err := trader.GetPositions()
 	if err != nil {
 		SafeInternalError(c, "Get positions", err)
 		return
 	}
+
+	logger.Infof("📊 API: Returning %d positions for trader_id='%s' (internal: '%s')",
+		len(positions), traderID, trader.GetID())
 
 	c.JSON(http.StatusOK, positions)
 }

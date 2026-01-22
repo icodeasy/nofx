@@ -1755,15 +1755,19 @@ func (at *AutoTrader) getFilteredPositions() ([]map[string]interface{}, error) {
 
 	// If no store, return all positions (backward compatibility)
 	if at.store == nil {
+		logger.Warnf("⚠️ No store available, returning all positions without filtering (trader: %s)", at.id)
 		return allPositions, nil
 	}
 
 	// Get this trader's open positions from local database
 	localPositions, err := at.store.Position().GetOpenPositions(at.id)
 	if err != nil {
-		logger.Infof("⚠️ Failed to get local positions: %v", err)
+		logger.Infof("⚠️ Failed to get local positions for trader '%s': %v", at.id, err)
 		return allPositions, nil // Fallback to all positions
 	}
+
+	logger.Infof("🔍 Position filtering: trader_id='%s', local positions count=%d, exchange positions count=%d",
+		at.id, len(localPositions), len(allPositions))
 
 	// Build a map of symbols+sides that this trader owns
 	ownedPositions := make(map[string]bool)
@@ -1773,6 +1777,7 @@ func (at *AutoTrader) getFilteredPositions() ([]map[string]interface{}, error) {
 		side := strings.ToLower(localPos.Side)
 		key := normalizedSymbol + "-" + side
 		ownedPositions[key] = true
+		logger.Infof("  ✓ Trader owns: %s", key)
 	}
 
 	// Filter positions to only return those owned by this trader
@@ -1786,9 +1791,12 @@ func (at *AutoTrader) getFilteredPositions() ([]map[string]interface{}, error) {
 		if ownedPositions[key] {
 			// This position is owned by this trader
 			filteredPositions = append(filteredPositions, pos)
+		} else {
+			logger.Infof("  ✗ Filtering out: %s (not owned by trader %s)", key, at.id)
 		}
 	}
 
+	logger.Infof("🔍 Filtered result: %d positions owned by trader '%s'", len(filteredPositions), at.id)
 	return filteredPositions, nil
 }
 
