@@ -1905,11 +1905,13 @@ func (at *AutoTrader) validateIsolatedPositionSize(positionSizeUSD float64, leve
 	return nil
 }
 
-// GetPositions gets position list (for API)
+// GetPositions gets position list (for API) - FILTERED by trader ID for isolation
 func (at *AutoTrader) GetPositions() ([]map[string]interface{}, error) {
-	positions, err := at.trader.GetPositions()
+	// ✅ CRITICAL FIX: Use filtered positions to enforce trader isolation
+	// This prevents traders from seeing each other's positions
+	positions, err := at.getFilteredPositions()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get positions: %w", err)
+		return nil, fmt.Errorf("failed to get filtered positions: %w", err)
 	}
 
 	var result []map[string]interface{}
