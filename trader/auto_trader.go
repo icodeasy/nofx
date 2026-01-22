@@ -669,7 +669,7 @@ func (at *AutoTrader) runCycle() error {
 		}
 
 		if err := at.executeDecisionWithRecord(&d, &actionRecord); err != nil {
-			logger.Infof("❌ Failed to execute decision (%s %s): %v", d.Symbol, d.Action, err)
+			logger.Errorf("❌ Failed to execute decision (%s %s): %v", d.Symbol, d.Action, err)
 			actionRecord.Error = err.Error()
 			record.ExecutionLog = append(record.ExecutionLog, fmt.Sprintf("❌ %s %s failed: %v", d.Symbol, d.Action, err))
 		} else {
@@ -970,6 +970,37 @@ func (at *AutoTrader) buildTradingContext() (*kernel.Context, error) {
 	return ctx, nil
 }
 
+// validateOrderResponse validates that an order was successfully created by the exchange
+// Returns error if order ID is missing or invalid, preventing silent failures
+func (at *AutoTrader) validateOrderResponse(order map[string]interface{}, action, symbol string) error {
+	if order == nil {
+		return fmt.Errorf("exchange returned nil response for %s %s", action, symbol)
+	}
+
+	// Extract order ID supporting multiple types
+	var orderID string
+	switch v := order["orderId"].(type) {
+	case int64:
+		orderID = fmt.Sprintf("%d", v)
+	case float64:
+		orderID = fmt.Sprintf("%.0f", v)
+	case string:
+		orderID = v
+	default:
+		orderID = fmt.Sprintf("%v", v)
+	}
+
+	// Check if order ID is valid
+	if orderID == "" || orderID == "0" || orderID == "<nil>" {
+		// Log the full response for debugging
+		logger.Errorf("❌ CRITICAL: Exchange returned invalid order ID for %s %s", action, symbol)
+		logger.Errorf("   Full response: %+v", order)
+		return fmt.Errorf("exchange returned invalid order ID (order ID: '%s') for %s %s - order may not have been created", orderID, action, symbol)
+	}
+
+	return nil
+}
+
 // executeDecisionWithRecord executes AI decision and records detailed information
 func (at *AutoTrader) executeDecisionWithRecord(decision *kernel.Decision, actionRecord *store.DecisionAction) error {
 	switch decision.Action {
@@ -1114,6 +1145,11 @@ func (at *AutoTrader) executeOpenLongWithRecord(decision *kernel.Decision, actio
 		return err
 	}
 
+	// ✅ CRITICAL FIX: Validate order was actually created by exchange
+	if err := at.validateOrderResponse(order, "open_long", decision.Symbol); err != nil {
+		return err
+	}
+
 	// Record order ID
 	if orderID, ok := order["orderId"].(int64); ok {
 		actionRecord.OrderID = orderID
@@ -1234,6 +1270,11 @@ func (at *AutoTrader) executeOpenShortWithRecord(decision *kernel.Decision, acti
 	// Open position
 	order, err := at.trader.OpenShort(decision.Symbol, quantity, decision.Leverage)
 	if err != nil {
+		return err
+	}
+
+	// ✅ CRITICAL FIX: Validate order was actually created by exchange
+	if err := at.validateOrderResponse(order, "open_short", decision.Symbol); err != nil {
 		return err
 	}
 
@@ -1367,6 +1408,11 @@ func (at *AutoTrader) executeCloseLongWithRecord(decision *kernel.Decision, acti
 		return err
 	}
 
+	// ✅ CRITICAL FIX: Validate order was actually created by exchange
+	if err := at.validateOrderResponse(order, "close_long", decision.Symbol); err != nil {
+		return err
+	}
+
 	// Record order ID
 	if orderID, ok := order["orderId"].(int64); ok {
 		actionRecord.OrderID = orderID
@@ -1481,6 +1527,11 @@ func (at *AutoTrader) executeCloseShortWithRecord(decision *kernel.Decision, act
 	// Close position
 	order, err := at.trader.CloseShort(decision.Symbol, 0) // 0 = close all
 	if err != nil {
+		return err
+	}
+
+	// ✅ CRITICAL FIX: Validate order was actually created by exchange
+	if err := at.validateOrderResponse(order, "close_short", decision.Symbol); err != nil {
 		return err
 	}
 
@@ -1672,11 +1723,11 @@ func (at *AutoTrader) GetAccountInfo() (map[string]interface{}, error) {
 
 	return map[string]interface{}{
 		// Isolated balance fields (primary - used for trading decisions)
-		"total_equity":      isolatedBalance.TotalEquity,       // Isolated equity = InitialBalance + RealizedPnL + UnrealizedPnL
-		"realized_pnl":      isolatedBalance.RealizedPnL,       // Realized P&L from closed positions
-		"unrealized_profit": isolatedBalance.UnrealizedPnL,     // Unrealized P&L from own positions
-		"available_balance": isolatedBalance.AvailableBalance,  // Isolated available balance
-		"initial_balance":   at.initialBalance,                 // Initial allocated balance
+		"total_equity":      isolatedBalance.TotalEquity,      // Isolated equity = InitialBalance + RealizedPnL + UnrealizedPnL
+		"realized_pnl":      isolatedBalance.RealizedPnL,      // Realized P&L from closed positions
+		"unrealized_profit": isolatedBalance.UnrealizedPnL,    // Unrealized P&L from own positions
+		"available_balance": isolatedBalance.AvailableBalance, // Isolated available balance
+		"initial_balance":   at.initialBalance,                // Initial allocated balance
 
 		// P&L statistics
 		"total_pnl":     totalPnL,    // Total P&L = equity - initial
@@ -1818,7 +1869,7 @@ func (at *AutoTrader) calculateIsolatedBalance() (*IsolatedBalance, error) {
 
 	return &IsolatedBalance{
 		InitialBalance:   at.initialBalance,
-		RealizedPnL:      realizedPnL, // Total profit/loss from closed positions
+		RealizedPnL:      realizedPnL,   // Total profit/loss from closed positions
 		UnrealizedPnL:    unrealizedPnL, // Current P&L from open positions
 		TotalEquity:      totalEquity,
 		UsedMargin:       usedMargin,
