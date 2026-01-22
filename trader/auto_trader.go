@@ -1745,59 +1745,51 @@ func (at *AutoTrader) GetAccountInfo() (map[string]interface{}, error) {
 }
 
 // getFilteredPositions gets positions filtered by trader ID (for isolation)
-// Returns only positions that are recorded in the local database for this trader
+// Returns only positions from the local database for this trader
+// Since traders have isolated local positions, we don't need to query exchange at all
 func (at *AutoTrader) getFilteredPositions() ([]map[string]interface{}, error) {
-	// Get all positions from exchange
-	allPositions, err := at.trader.GetPositions()
+	// If no store, return error (no positions available)
+	if at.store == nil {
+		logger.Errorf("⚠️ No store available (trader: %s)", at.id)
+		return []map[string]interface{}{}, fmt.Errorf("no position store available")
+	}
+
+	// Get this trader's open positions from local database (complete source of truth)
+	localPositions, err := at.store.Position().GetOpenPositions(at.id)
 	if err != nil {
+		logger.Errorf("⚠️ Failed to get local positions for trader '%s': %v", at.id, err)
 		return nil, err
 	}
 
-	// If no store, return all positions (backward compatibility)
-	if at.store == nil {
-		logger.Warnf("⚠️ No store available, returning all positions without filtering (trader: %s)", at.id)
-		return allPositions, nil
+	// If no local positions, return empty
+	if len(localPositions) == 0 {
+		logger.Infof("🔍 No local positions for trader '%s'", at.id)
+		return []map[string]interface{}{}, nil
 	}
 
-	// Get this trader's open positions from local database
-	localPositions, err := at.store.Position().GetOpenPositions(at.id)
-	if err != nil {
-		logger.Infof("⚠️ Failed to get local positions for trader '%s': %v", at.id, err)
-		return allPositions, nil // Fallback to all positions
-	}
-
-	logger.Infof("🔍 Position filtering: trader_id='%s', local positions count=%d, exchange positions count=%d",
-		at.id, len(localPositions), len(allPositions))
-
-	// Build a map of symbols+sides that this trader owns
-	ownedPositions := make(map[string]bool)
+	// Build position data from local DB only
+	var result []map[string]interface{}
 	for _, localPos := range localPositions {
-		// Normalize symbol for comparison
-		normalizedSymbol := market.Normalize(localPos.Symbol)
-		side := strings.ToLower(localPos.Side)
-		key := normalizedSymbol + "-" + side
-		ownedPositions[key] = true
-		logger.Infof("  ✓ Trader owns: %s", key)
-	}
-
-	// Filter positions to only return those owned by this trader
-	var filteredPositions []map[string]interface{}
-	for _, pos := range allPositions {
-		symbol := pos["symbol"].(string)
-		side := pos["side"].(string)
-		normalizedSymbol := market.Normalize(symbol)
-		key := normalizedSymbol + "-" + side
-
-		if ownedPositions[key] {
-			// This position is owned by this trader
-			filteredPositions = append(filteredPositions, pos)
-		} else {
-			logger.Infof("  ✗ Filtering out: %s (not owned by trader %s)", key, at.id)
+		posData := map[string]interface{}{
+			"symbol":       localPos.Symbol,
+			"side":         strings.ToLower(localPos.Side),
+			"positionAmt":  localPos.Quantity,
+			"entryPrice":   localPos.EntryPrice,
+			"markPrice":    localPos.EntryPrice, // Use entry price as fallback
+			"leverage":     localPos.Leverage,
+			"notional":     localPos.Quantity * localPos.EntryPrice,
+			"unRealizedProfit": 0.0,
+			"liquidationPrice": 0.0,
+			"marginUsed":   0.0,
 		}
+
+		logger.Infof("  ✓ Position: %s %s %.6f @ %.2f (leverage: %dx)",
+			localPos.Symbol, localPos.Side, localPos.Quantity, localPos.EntryPrice, localPos.Leverage)
+		result = append(result, posData)
 	}
 
-	logger.Infof("🔍 Filtered result: %d positions owned by trader '%s'", len(filteredPositions), at.id)
-	return filteredPositions, nil
+	logger.Infof("🔍 Filtered result: %d positions for trader '%s'", len(result), at.id)
+	return result, nil
 }
 
 // calculateIsolatedBalance calculates the trader's isolated balance based on InitialBalance

@@ -879,14 +879,14 @@ func (s *PositionStore) calculateStreaks(traderID string, summary *HistorySummar
 }
 
 // ExistsWithExchangePositionID checks if a position exists
-func (s *PositionStore) ExistsWithExchangePositionID(exchangeID, exchangePositionID string) (bool, error) {
+func (s *PositionStore) ExistsWithExchangePositionID(traderID, exchangeID, exchangePositionID string) (bool, error) {
 	if exchangePositionID == "" {
 		return false, nil
 	}
 
 	var count int64
 	err := s.db.Model(&TraderPosition{}).
-		Where("exchange_id = ? AND exchange_position_id = ?", exchangeID, exchangePositionID).
+		Where("trader_id = ? AND exchange_id = ? AND exchange_position_id = ?", traderID, exchangeID, exchangePositionID).
 		Count(&count).Error
 	if err != nil {
 		return false, fmt.Errorf("failed to check position existence: %w", err)
@@ -895,13 +895,13 @@ func (s *PositionStore) ExistsWithExchangePositionID(exchangeID, exchangePositio
 }
 
 // GetOpenPositionByExchangePositionID gets an OPEN position by exchange_position_id
-func (s *PositionStore) GetOpenPositionByExchangePositionID(exchangeID, exchangePositionID string) (*TraderPosition, error) {
+func (s *PositionStore) GetOpenPositionByExchangePositionID(traderID, exchangeID, exchangePositionID string) (*TraderPosition, error) {
 	if exchangePositionID == "" {
 		return nil, nil
 	}
 
 	var pos TraderPosition
-	err := s.db.Where("exchange_id = ? AND exchange_position_id = ? AND status = ?", exchangeID, exchangePositionID, "OPEN").
+	err := s.db.Where("trader_id = ? AND exchange_id = ? AND exchange_position_id = ? AND status = ?", traderID, exchangeID, exchangePositionID, "OPEN").
 		First(&pos).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -957,7 +957,7 @@ func (s *PositionStore) CreateFromClosedPnL(traderID, exchangeID, exchangeType s
 		exchangePositionID = fmt.Sprintf("%s_%s_%d_%.8f", record.Symbol, side, record.ExitTime.UnixMilli(), record.RealizedPnL)
 	}
 
-	exists, err := s.ExistsWithExchangePositionID(exchangeID, exchangePositionID)
+	exists, err := s.ExistsWithExchangePositionID(traderID, exchangeID, exchangePositionID)
 	if err != nil {
 		return false, err
 	}
@@ -1031,14 +1031,14 @@ func (s *PositionStore) GetLastClosedPositionTime(traderID string) (time.Time, e
 // CreateOpenPosition creates an open position
 func (s *PositionStore) CreateOpenPosition(pos *TraderPosition) error {
 	if pos.ExchangePositionID != "" && pos.ExchangeID != "" {
-		existingPos, err := s.GetOpenPositionByExchangePositionID(pos.ExchangeID, pos.ExchangePositionID)
+		existingPos, err := s.GetOpenPositionByExchangePositionID(pos.TraderID, pos.ExchangeID, pos.ExchangePositionID)
 		if err != nil {
 			return err
 		}
 		if existingPos != nil {
 			return s.UpdatePositionQuantityAndPrice(existingPos.ID, pos.Quantity, pos.EntryPrice, pos.Fee)
 		}
-		exists, err := s.ExistsWithExchangePositionID(pos.ExchangeID, pos.ExchangePositionID)
+		exists, err := s.ExistsWithExchangePositionID(pos.TraderID, pos.ExchangeID, pos.ExchangePositionID)
 		if err != nil {
 			return err
 		}
@@ -1060,7 +1060,7 @@ func (s *PositionStore) CreateOpenPosition(pos *TraderPosition) error {
 	err := s.db.Create(pos).Error
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
-			existingPos, findErr := s.GetOpenPositionByExchangePositionID(pos.ExchangeID, pos.ExchangePositionID)
+			existingPos, findErr := s.GetOpenPositionByExchangePositionID(pos.TraderID, pos.ExchangeID, pos.ExchangePositionID)
 			if findErr != nil {
 				return findErr
 			}
