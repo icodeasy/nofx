@@ -51,6 +51,9 @@ deploy_api() {
     # SSH to qisg and deploy
     ssh qisg << 'ENDSSH'
         set -e
+        # Add Go to PATH
+        export PATH=$PATH:/usr/local/go/bin
+
         echo "[INFO] Deploying to API server..."
 
         # Navigate to project directory
