@@ -1055,7 +1055,7 @@ func (at *AutoTrader) ExecuteDecision(d *kernel.Decision) error {
 func (at *AutoTrader) executeOpenLongWithRecord(decision *kernel.Decision, actionRecord *store.DecisionAction) error {
 	logger.Infof("  📈 Open long: %s", decision.Symbol)
 
-	// ⚠️ Get this trader's filtered positions for multiple checks
+	// Get this trader's filtered positions for duplicate check
 	positions, err := at.getFilteredPositions()
 	if err != nil {
 		return fmt.Errorf("failed to get filtered positions: %w", err)
@@ -1079,25 +1079,19 @@ func (at *AutoTrader) executeOpenLongWithRecord(decision *kernel.Decision, actio
 		return err
 	}
 
-	// Get balance (needed for multiple checks)
-	balance, err := at.trader.GetBalance()
+	// [CODE ENFORCED] Balance Isolation Check: validate against isolated balance
+	isolatedBalance, err := at.calculateIsolatedBalance()
 	if err != nil {
-		return fmt.Errorf("failed to get account balance: %w", err)
-	}
-	availableBalance := 0.0
-	if avail, ok := balance["availableBalance"].(float64); ok {
-		availableBalance = avail
+		return fmt.Errorf("failed to calculate isolated balance: %w", err)
 	}
 
-	// Get equity for position value ratio check
-	equity := 0.0
-	if eq, ok := balance["totalEquity"].(float64); ok && eq > 0 {
-		equity = eq
-	} else if eq, ok := balance["totalWalletBalance"].(float64); ok && eq > 0 {
-		equity = eq
-	} else {
-		equity = availableBalance // Fallback to available balance
+	if err := at.validateIsolatedPositionSize(decision.PositionSizeUSD, decision.Leverage); err != nil {
+		logger.Warnf("  ❌ Isolated balance validation failed: %v", err)
+		return err
 	}
+
+	// Get equity for position value ratio check (use isolated equity)
+	equity := isolatedBalance.TotalEquity
 
 	// [CODE ENFORCED] Position Value Ratio Check: position_value <= equity × ratio
 	adjustedPositionSize, wasCapped := at.enforcePositionValueRatio(decision.PositionSizeUSD, equity, decision.Symbol)
@@ -1105,24 +1099,18 @@ func (at *AutoTrader) executeOpenLongWithRecord(decision *kernel.Decision, actio
 		decision.PositionSizeUSD = adjustedPositionSize
 	}
 
-	// [CODE ENFORCED] Balance Isolation Check: validate against isolated balance
-	if err := at.validateIsolatedPositionSize(decision.PositionSizeUSD, decision.Leverage); err != nil {
-		logger.Warnf("  ❌ Isolated balance validation failed: %v", err)
-		return err
-	}
-
-	// ⚠️ Auto-adjust position size if insufficient margin
+	// ⚠️ Auto-adjust position size if insufficient margin (CRITICAL: use ISOLATED available balance)
 	// Formula: totalRequired = positionSize/leverage + positionSize*0.001 + positionSize/leverage*0.01
 	//        = positionSize * (1.01/leverage + 0.001)
 	marginFactor := 1.01/float64(decision.Leverage) + 0.001
-	maxAffordablePositionSize := availableBalance / marginFactor
+	maxAffordablePositionSize := isolatedBalance.AvailableBalance / marginFactor
 
 	actualPositionSize := decision.PositionSizeUSD
 	if actualPositionSize > maxAffordablePositionSize {
 		// Use 98% of max to leave buffer for price fluctuation
 		adjustedSize := maxAffordablePositionSize * 0.98
-		logger.Infof("  ⚠️ Position size %.2f exceeds max affordable %.2f, auto-reducing to %.2f",
-			actualPositionSize, maxAffordablePositionSize, adjustedSize)
+		logger.Infof("  ⚠️ Position size %.2f exceeds max affordable %.2f (based on ISOLATED balance %.2f), auto-reducing to %.2f",
+			actualPositionSize, maxAffordablePositionSize, isolatedBalance.AvailableBalance, adjustedSize)
 		actualPositionSize = adjustedSize
 		decision.PositionSizeUSD = actualPositionSize
 	}
@@ -1183,7 +1171,7 @@ func (at *AutoTrader) executeOpenLongWithRecord(decision *kernel.Decision, actio
 func (at *AutoTrader) executeOpenShortWithRecord(decision *kernel.Decision, actionRecord *store.DecisionAction) error {
 	logger.Infof("  📉 Open short: %s", decision.Symbol)
 
-	// ⚠️ Get this trader's filtered positions for multiple checks
+	// Get this trader's filtered positions for duplicate check
 	positions, err := at.getFilteredPositions()
 	if err != nil {
 		return fmt.Errorf("failed to get filtered positions: %w", err)
@@ -1207,25 +1195,19 @@ func (at *AutoTrader) executeOpenShortWithRecord(decision *kernel.Decision, acti
 		return err
 	}
 
-	// Get balance (needed for multiple checks)
-	balance, err := at.trader.GetBalance()
+	// [CODE ENFORCED] Balance Isolation Check: validate against isolated balance
+	isolatedBalance, err := at.calculateIsolatedBalance()
 	if err != nil {
-		return fmt.Errorf("failed to get account balance: %w", err)
-	}
-	availableBalance := 0.0
-	if avail, ok := balance["availableBalance"].(float64); ok {
-		availableBalance = avail
+		return fmt.Errorf("failed to calculate isolated balance: %w", err)
 	}
 
-	// Get equity for position value ratio check
-	equity := 0.0
-	if eq, ok := balance["totalEquity"].(float64); ok && eq > 0 {
-		equity = eq
-	} else if eq, ok := balance["totalWalletBalance"].(float64); ok && eq > 0 {
-		equity = eq
-	} else {
-		equity = availableBalance // Fallback to available balance
+	if err := at.validateIsolatedPositionSize(decision.PositionSizeUSD, decision.Leverage); err != nil {
+		logger.Warnf("  ❌ Isolated balance validation failed: %v", err)
+		return err
 	}
+
+	// Get equity for position value ratio check (use isolated equity)
+	equity := isolatedBalance.TotalEquity
 
 	// [CODE ENFORCED] Position Value Ratio Check: position_value <= equity × ratio
 	adjustedPositionSize, wasCapped := at.enforcePositionValueRatio(decision.PositionSizeUSD, equity, decision.Symbol)
@@ -1233,24 +1215,18 @@ func (at *AutoTrader) executeOpenShortWithRecord(decision *kernel.Decision, acti
 		decision.PositionSizeUSD = adjustedPositionSize
 	}
 
-	// [CODE ENFORCED] Balance Isolation Check: validate against isolated balance
-	if err := at.validateIsolatedPositionSize(decision.PositionSizeUSD, decision.Leverage); err != nil {
-		logger.Warnf("  ❌ Isolated balance validation failed: %v", err)
-		return err
-	}
-
-	// ⚠️ Auto-adjust position size if insufficient margin
+	// ⚠️ Auto-adjust position size if insufficient margin (CRITICAL: use ISOLATED available balance)
 	// Formula: totalRequired = positionSize/leverage + positionSize*0.001 + positionSize/leverage*0.01
 	//        = positionSize * (1.01/leverage + 0.001)
 	marginFactor := 1.01/float64(decision.Leverage) + 0.001
-	maxAffordablePositionSize := availableBalance / marginFactor
+	maxAffordablePositionSize := isolatedBalance.AvailableBalance / marginFactor
 
 	actualPositionSize := decision.PositionSizeUSD
 	if actualPositionSize > maxAffordablePositionSize {
 		// Use 98% of max to leave buffer for price fluctuation
 		adjustedSize := maxAffordablePositionSize * 0.98
-		logger.Infof("  ⚠️ Position size %.2f exceeds max affordable %.2f, auto-reducing to %.2f",
-			actualPositionSize, maxAffordablePositionSize, adjustedSize)
+		logger.Infof("  ⚠️ Position size %.2f exceeds max affordable %.2f (based on ISOLATED balance %.2f), auto-reducing to %.2f",
+			actualPositionSize, maxAffordablePositionSize, isolatedBalance.AvailableBalance, adjustedSize)
 		actualPositionSize = adjustedSize
 		decision.PositionSizeUSD = actualPositionSize
 	}
@@ -1775,16 +1751,16 @@ func (at *AutoTrader) getFilteredPositions() ([]map[string]interface{}, error) {
 	var result []map[string]interface{}
 	for _, localPos := range localPositions {
 		posData := map[string]interface{}{
-			"symbol":       localPos.Symbol,
-			"side":         strings.ToLower(localPos.Side),
-			"positionAmt":  localPos.Quantity,
-			"entryPrice":   localPos.EntryPrice,
-			"markPrice":    localPos.EntryPrice, // Use entry price as fallback
-			"leverage":     localPos.Leverage,
-			"notional":     localPos.Quantity * localPos.EntryPrice,
+			"symbol":           localPos.Symbol,
+			"side":             strings.ToLower(localPos.Side),
+			"positionAmt":      localPos.Quantity,
+			"entryPrice":       localPos.EntryPrice,
+			"markPrice":        localPos.EntryPrice, // Use entry price as fallback
+			"leverage":         localPos.Leverage,
+			"notional":         localPos.Quantity * localPos.EntryPrice,
 			"unRealizedProfit": 0.0,
 			"liquidationPrice": 0.0,
-			"marginUsed":   0.0,
+			"marginUsed":       0.0,
 		}
 
 		logger.Infof("  ✓ Position: %s %s %.6f @ %.2f (leverage: %dx)",
