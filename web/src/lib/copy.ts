@@ -117,6 +117,8 @@ export function openMarkdownInNewTab(content: string, title: string): void {
       <html>
       <head>
         <title>${title}</title>
+        <meta charset="utf-8"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
         <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"><\/script>
         <style>
           body {
@@ -131,7 +133,7 @@ export function openMarkdownInNewTab(content: string, title: string): void {
           }
           /* Markdown styles */
           h1, h2, h3, h4, h5, h6 {
-            color: #F0F0F0;
+            color: #EAECEF;
             margin-top: 24px;
             margin-bottom: 16px;
             font-weight: 600;
@@ -146,6 +148,7 @@ export function openMarkdownInNewTab(content: string, title: string): void {
             border-radius: 3px;
             font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
             font-size: 0.9em;
+            color: #a855f7;
           }
           pre {
             background: #1a1d21;
@@ -153,21 +156,24 @@ export function openMarkdownInNewTab(content: string, title: string): void {
             border-radius: 6px;
             overflow-x: auto;
             border: 1px solid #333;
+            margin: 16px 0;
           }
           pre code {
             background: transparent;
             padding: 0;
             border-radius: 0;
             font-size: 0.9em;
+            color: #EAECEF;
           }
           blockquote {
-            border-left: 4px solid #4a5568;
+            border-left: 4px solid #a855f7;
             padding-left: 16px;
             color: #a0aec0;
-            margin: 0;
+            margin: 16px 0;
           }
           ul, ol {
             padding-left: 2em;
+            margin: 16px 0;
           }
           li {
             margin: 4px 0;
@@ -187,7 +193,7 @@ export function openMarkdownInNewTab(content: string, title: string): void {
             font-weight: 600;
           }
           a {
-            color: #7dd3fc;
+            color: #a855f7;
             text-decoration: none;
           }
           a:hover {
@@ -202,11 +208,23 @@ export function openMarkdownInNewTab(content: string, title: string): void {
             border-top: 1px solid #333;
             margin: 24px 0;
           }
+          strong {
+            color: #EAECEF;
+            font-weight: 600;
+          }
+          em {
+            color: #a0aec0;
+          }
         </style>
       </head>
       <body>
         <div id="content"></div>
         <script>
+          // Configure marked options
+          marked.setOptions({
+            breaks: true,
+            gfm: true
+          });
           document.getElementById('content').innerHTML = marked.parse(${JSON.stringify(content)});
         <\/script>
       </body>
