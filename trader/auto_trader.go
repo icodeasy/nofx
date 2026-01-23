@@ -625,8 +625,12 @@ func (at *AutoTrader) runCycle() error {
 	// 8. Sort decisions: ensure close positions first, then open positions (prevent position stacking overflow)
 	logger.Info(strings.Repeat("-", 70))
 
-	// 8. Sort decisions: ensure close positions first, then open positions (prevent position stacking overflow)
-	sortedDecisions := sortDecisionsByPriority(aiDecision.Decisions)
+	// 8. Deduplicate decisions: ensure only ONE decision per symbol
+	// This prevents AI from returning conflicting decisions like [{"symbol": "ETHUSDT", "action": "wait"}, {"symbol": "ETHUSDT", "action": "open_short"}]
+	deduplicatedDecisions := deduplicateDecisionsBySymbol(aiDecision.Decisions)
+
+	// 9. Sort decisions: ensure close positions first, then open positions (prevent position stacking overflow)
+	sortedDecisions := sortDecisionsByPriority(deduplicatedDecisions)
 
 	logger.Info("🔄 Execution order (optimized): Close positions first → Open positions later")
 	for i, d := range sortedDecisions {
@@ -1999,6 +2003,66 @@ func sortDecisionsByPriority(decisions []kernel.Decision) []kernel.Decision {
 	}
 
 	return sorted
+}
+
+// deduplicateDecisionsBySymbol ensures only one decision per symbol
+// If multiple decisions exist for the same symbol, keep only the highest priority one
+// Priority: close > open > wait/hold
+func deduplicateDecisionsBySymbol(decisions []kernel.Decision) []kernel.Decision {
+	if len(decisions) <= 1 {
+		return decisions
+	}
+
+	// Define priority (must match sortDecisionsByPriority)
+	getActionPriority := func(action string) int {
+		switch action {
+		case "close_long", "close_short":
+			return 1
+		case "open_long", "open_short":
+			return 2
+		case "hold", "wait":
+			return 3
+		default:
+			return 999
+		}
+	}
+
+	// Use a map to track the best decision for each symbol
+	symbolDecisions := make(map[string]kernel.Decision)
+
+	for _, decision := range decisions {
+		symbol := decision.Symbol
+		existing, exists := symbolDecisions[symbol]
+
+		if !exists {
+			// First decision for this symbol
+			symbolDecisions[symbol] = decision
+		} else {
+			// Keep the decision with higher priority (lower number = higher priority)
+			if getActionPriority(decision.Action) < getActionPriority(existing.Action) {
+				logger.Warnf("⚠️  Multiple decisions detected for %s: keeping %s (priority) over %s",
+					symbol, decision.Action, existing.Action)
+				symbolDecisions[symbol] = decision
+			} else {
+				logger.Warnf("⚠️  Multiple decisions detected for %s: keeping %s (priority) over %s",
+					symbol, existing.Action, decision.Action)
+			}
+		}
+	}
+
+	// Convert map back to slice
+	uniqueDecisions := make([]kernel.Decision, 0, len(symbolDecisions))
+	for _, decision := range symbolDecisions {
+		uniqueDecisions = append(uniqueDecisions, decision)
+	}
+
+	// Log deduplication results
+	if len(uniqueDecisions) < len(decisions) {
+		logger.Infof("🔧 Deduplicated decisions: %d → %d (removed %d duplicate(s))",
+			len(decisions), len(uniqueDecisions), len(decisions)-len(uniqueDecisions))
+	}
+
+	return uniqueDecisions
 }
 
 // startDrawdownMonitor starts drawdown monitoring
