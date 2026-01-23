@@ -1051,10 +1051,10 @@ func (at *AutoTrader) ExecuteDecision(d *kernel.Decision) error {
 func (at *AutoTrader) executeOpenLongWithRecord(decision *kernel.Decision, actionRecord *store.DecisionAction) error {
 	logger.Infof("  📈 Open long: %s", decision.Symbol)
 
-	// ⚠️ Get current positions for multiple checks
-	positions, err := at.trader.GetPositions()
+	// ⚠️ Get this trader's filtered positions for multiple checks
+	positions, err := at.getFilteredPositions()
 	if err != nil {
-		return fmt.Errorf("failed to get positions: %w", err)
+		return fmt.Errorf("failed to get filtered positions: %w", err)
 	}
 
 	// [CODE ENFORCED] Check max positions limit
@@ -1179,10 +1179,10 @@ func (at *AutoTrader) executeOpenLongWithRecord(decision *kernel.Decision, actio
 func (at *AutoTrader) executeOpenShortWithRecord(decision *kernel.Decision, actionRecord *store.DecisionAction) error {
 	logger.Infof("  📉 Open short: %s", decision.Symbol)
 
-	// ⚠️ Get current positions for multiple checks
-	positions, err := at.trader.GetPositions()
+	// ⚠️ Get this trader's filtered positions for multiple checks
+	positions, err := at.getFilteredPositions()
 	if err != nil {
-		return fmt.Errorf("failed to get positions: %w", err)
+		return fmt.Errorf("failed to get filtered positions: %w", err)
 	}
 
 	// [CODE ENFORCED] Check max positions limit
@@ -2026,10 +2026,10 @@ func (at *AutoTrader) startDrawdownMonitor() {
 
 // checkPositionDrawdown checks position drawdown situation
 func (at *AutoTrader) checkPositionDrawdown() {
-	// Get current positions
-	positions, err := at.trader.GetPositions()
+	// Get this trader's filtered positions only
+	positions, err := at.getFilteredPositions()
 	if err != nil {
-		logger.Infof("❌ Drawdown monitoring: failed to get positions: %v", err)
+		logger.Infof("❌ Drawdown monitoring: failed to get filtered positions: %v", err)
 		return
 	}
 
