@@ -129,12 +129,12 @@ deploy_web() {
 
     # Also copy package.json and package-lock.json if they changed
     if git diff --name-only HEAD~$num_commits HEAD | grep -q "package.json"; then
-        cp package.json "$temp_dir/"
+        cp web/package.json "$temp_dir/"
         print_info "Including package.json"
     fi
 
     if git diff --name-only HEAD~$num_commits HEAD | grep -q "package-lock.json"; then
-        cp package-lock.json "$temp_dir/"
+        cp web/package-lock.json "$temp_dir/"
         print_info "Including package-lock.json"
     fi
 
