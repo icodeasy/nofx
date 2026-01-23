@@ -103,3 +103,115 @@ export function openInNewTab(content: string, title: string): void {
     newWindow.document.close()
   }
 }
+
+/**
+ * Open markdown content in a new browser tab/window with markdown rendering
+ * @param content - The markdown content to display
+ * @param title - The title for the new window/tab
+ */
+export function openMarkdownInNewTab(content: string, title: string): void {
+  const newWindow = window.open('', '_blank')
+  if (newWindow) {
+    newWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>${title}</title>
+        <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"><\/script>
+        <style>
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+            background: #0B0E11;
+            color: #EAECEF;
+            padding: 20px;
+            margin: 0;
+            line-height: 1.6;
+            max-width: 900px;
+            margin: 0 auto;
+          }
+          /* Markdown styles */
+          h1, h2, h3, h4, h5, h6 {
+            color: #F0F0F0;
+            margin-top: 24px;
+            margin-bottom: 16px;
+            font-weight: 600;
+            line-height: 1.25;
+          }
+          h1 { font-size: 2em; border-bottom: 1px solid #333; padding-bottom: 0.3em; }
+          h2 { font-size: 1.5em; border-bottom: 1px solid #333; padding-bottom: 0.3em; }
+          h3 { font-size: 1.25em; }
+          code {
+            background: #1a1d21;
+            padding: 0.2em 0.4em;
+            border-radius: 3px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 0.9em;
+          }
+          pre {
+            background: #1a1d21;
+            padding: 16px;
+            border-radius: 6px;
+            overflow-x: auto;
+            border: 1px solid #333;
+          }
+          pre code {
+            background: transparent;
+            padding: 0;
+            border-radius: 0;
+            font-size: 0.9em;
+          }
+          blockquote {
+            border-left: 4px solid #4a5568;
+            padding-left: 16px;
+            color: #a0aec0;
+            margin: 0;
+          }
+          ul, ol {
+            padding-left: 2em;
+          }
+          li {
+            margin: 4px 0;
+          }
+          table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 16px 0;
+          }
+          th, td {
+            border: 1px solid #333;
+            padding: 8px 12px;
+            text-align: left;
+          }
+          th {
+            background: #1a1d21;
+            font-weight: 600;
+          }
+          a {
+            color: #7dd3fc;
+            text-decoration: none;
+          }
+          a:hover {
+            text-decoration: underline;
+          }
+          img {
+            max-width: 100%;
+            height: auto;
+          }
+          hr {
+            border: none;
+            border-top: 1px solid #333;
+            margin: 24px 0;
+          }
+        </style>
+      </head>
+      <body>
+        <div id="content"></div>
+        <script>
+          document.getElementById('content').innerHTML = marked.parse(${JSON.stringify(content)});
+        <\/script>
+      </body>
+      </html>
+    `)
+    newWindow.document.close()
+  }
+}

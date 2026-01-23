@@ -32,7 +32,7 @@ import {
 } from 'lucide-react'
 import type { Strategy, StrategyConfig, AIModel } from '../types'
 import { confirmToast, notify } from '../lib/notify'
-import { openInNewTab } from '../lib/copy'
+import { openInNewTab, openMarkdownInNewTab } from '../lib/copy'
 import { CoinSourceEditor } from '../components/strategy/CoinSourceEditor'
 import { IndicatorEditor } from '../components/strategy/IndicatorEditor'
 import { RiskControlEditor } from '../components/strategy/RiskControlEditor'
@@ -921,7 +921,7 @@ export function StrategyStudioPage() {
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => {
-                              openInNewTab(promptPreview.system_prompt, 'System Prompt Preview')
+                              openMarkdownInNewTab(promptPreview.system_prompt, 'System Prompt Preview')
                             }}
                             className="text-[10px] px-2 py-1 rounded hover:bg-purple-600/30 transition-colors flex items-center gap-1 text-purple-500 border border-purple-500/30"
                             title="Open in new tab"
@@ -1035,7 +1035,7 @@ export function StrategyStudioPage() {
                               <button
                                 onClick={() => {
                                   if (aiTestResult.user_prompt) {
-                                    openInNewTab(aiTestResult.user_prompt, 'User Prompt - AI Test Result')
+                                    openMarkdownInNewTab(aiTestResult.user_prompt, 'User Prompt - AI Test Result')
                                   }
                                 }}
                                 className="text-[10px] px-2 py-1 rounded hover:bg-blue-600/30 transition-colors text-blue-400 border border-blue-400/30"
@@ -1064,7 +1064,7 @@ export function StrategyStudioPage() {
                               <button
                                 onClick={() => {
                                   if (aiTestResult.reasoning) {
-                                    openInNewTab(aiTestResult.reasoning, 'AI Reasoning - Test Result')
+                                    openMarkdownInNewTab(aiTestResult.reasoning, 'AI Reasoning - Test Result')
                                   }
                                 }}
                                 className="text-[10px] px-2 py-1 rounded hover:bg-nofx-gold/30 transition-colors text-nofx-gold border border-nofx-gold/30"
