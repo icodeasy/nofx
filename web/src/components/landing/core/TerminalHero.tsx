@@ -330,13 +330,6 @@ function CommunityStats() {
             icon: Users,
             color: 'text-green-400',
             href: `${OFFICIAL_LINKS.github}/graphs/contributors`
-        },
-        {
-            label: 'DEV COMMUNITY',
-            value: '6,000+', // Updated as per user request
-            icon: MessageCircle,
-            color: 'text-blue-500',
-            href: OFFICIAL_LINKS.telegram
         }
     ]
 
