@@ -140,7 +140,7 @@ deploy_web() {
 
     # Upload files to qibj
     print_info "Uploading files to qibj..."
-    scp -r "$temp_dir"/* root@qibj:/root/projects/nofx/web/
+    scp -r "$temp_dir"/* root@qibj:/root/projects/nofx/
 
     # Clean up temp directory
     rm -rf "$temp_dir"
