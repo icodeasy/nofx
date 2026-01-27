@@ -330,6 +330,136 @@ func GetFullDecisionWithStrategy(ctx *Context, mcpClient mcp.AIClient, engine *S
 // Market Data Fetching
 // ============================================================================
 
+// validateIndicatorData validates that enabled indicators have actual data
+// Returns error if any enabled indicator is missing data across all symbols
+func validateIndicatorData(marketDataMap map[string]*market.Data, indicators store.IndicatorConfig) error {
+	if len(marketDataMap) == 0 {
+		return nil // No data to validate
+	}
+
+	var validationErrors []string
+
+	// Check each symbol's data
+	for symbol, data := range marketDataMap {
+		// Skip validation if timeframe data is not available (old format)
+		if len(data.TimeframeData) == 0 {
+			continue
+		}
+
+		// Sample the first timeframe for validation (usually primary)
+		var sampleTF *market.TimeframeSeriesData
+		for _, tfData := range data.TimeframeData {
+			sampleTF = tfData
+			break
+		}
+
+		if sampleTF == nil {
+			continue
+		}
+
+		// Validate EMA
+		if indicators.EnableEMA {
+			hasData := len(sampleTF.EMA20Values) > 0 || len(sampleTF.EMA50Values) > 0
+			if !hasData {
+				validationErrors = append(validationErrors,
+					fmt.Sprintf("%s: EMA enabled but no EMA data (need at least 20 klines for EMA20, 50 for EMA50)", symbol))
+			}
+		}
+
+		// Validate MACD
+		if indicators.EnableMACD {
+			if len(sampleTF.MACDValues) == 0 {
+				validationErrors = append(validationErrors,
+					fmt.Sprintf("%s: MACD enabled but no MACD data (need at least 26 klines)", symbol))
+			}
+		}
+
+		// Validate RSI
+		if indicators.EnableRSI {
+			hasData := len(sampleTF.RSI7Values) > 0 || len(sampleTF.RSI14Values) > 0
+			if !hasData {
+				validationErrors = append(validationErrors,
+					fmt.Sprintf("%s: RSI enabled but no RSI data (need at least 7 klines for RSI7, 14 for RSI14)", symbol))
+			}
+		}
+
+		// Validate ATR
+		if indicators.EnableATR {
+			if sampleTF.ATR14 == 0 {
+				validationErrors = append(validationErrors,
+					fmt.Sprintf("%s: ATR enabled but no ATR data (need at least 14 klines)", symbol))
+			}
+		}
+
+		// Validate BOLL
+		if indicators.EnableBOLL {
+			if len(sampleTF.BOLLUpper) == 0 {
+				validationErrors = append(validationErrors,
+					fmt.Sprintf("%s: BOLL enabled but no Bollinger Bands data (need at least 20 klines)", symbol))
+			}
+		}
+
+		// Validate BOX
+		if indicators.EnableBOX {
+			hasData := len(sampleTF.BOXTop) == 2 && len(sampleTF.BOXBottom) == 2
+			if !hasData {
+				validationErrors = append(validationErrors,
+					fmt.Sprintf("%s: BOX enabled but insufficient tops/bottoms detected (need at least 3 tops and 3 bottoms with 3%% price movement)", symbol))
+			}
+		}
+	}
+
+	// If validation errors exist, return them
+	if len(validationErrors) > 0 {
+		// Log all validation errors
+		for _, err := range validationErrors {
+			logger.Warnf("⚠️  Indicator validation warning: %s", err)
+		}
+
+		// Check if any indicators are completely missing across ALL symbols
+		// This is a critical failure - don't proceed to AI
+		missingIndicators := map[string]string{}
+
+		for _, err := range validationErrors {
+			// Parse error to extract indicator type
+			if strings.Contains(err, "EMA enabled but no EMA data") {
+				missingIndicators["EMA"] = err
+			} else if strings.Contains(err, "MACD enabled but no MACD data") {
+				missingIndicators["MACD"] = err
+			} else if strings.Contains(err, "RSI enabled but no RSI data") {
+				missingIndicators["RSI"] = err
+			} else if strings.Contains(err, "ATR enabled but no ATR data") {
+				missingIndicators["ATR"] = err
+			} else if strings.Contains(err, "BOLL enabled but no Bollinger Bands data") {
+				missingIndicators["BOLL"] = err
+			} else if strings.Contains(err, "BOX enabled but insufficient tops/bottoms") {
+				missingIndicators["BOX"] = err
+			}
+		}
+
+		// If critical indicators are completely missing, return error
+		if len(missingIndicators) > 0 {
+			var missingList []string
+			for indicator := range missingIndicators {
+				missingList = append(missingList, indicator)
+			}
+
+			errorMsg := fmt.Sprintf("Enabled indicators have no data: %s. "+
+				"Please either disable these indicators or increase kline count. "+
+				"Minimum requirements: EMA/MACD/ATR/BOLL: 20-26 klines, RSI: 7-14 klines, BOX: 30+ klines with volatility",
+				strings.Join(missingList, ", "))
+
+			logger.Errorf("❌ %s", errorMsg)
+			return fmt.Errorf("%s", errorMsg)
+		}
+
+		// Otherwise just log warnings for partial failures
+		logger.Infof("⚠️  Found %d indicator validation warnings - proceeding with available data", len(validationErrors))
+	}
+
+	return nil
+}
+
 // fetchMarketDataWithStrategy fetches market data using strategy config (multiple timeframes)
 func fetchMarketDataWithStrategy(ctx *Context, engine *StrategyEngine) error {
 	config := engine.GetConfig()
@@ -405,6 +535,12 @@ func fetchMarketDataWithStrategy(ctx *Context, engine *StrategyEngine) error {
 	}
 
 	logger.Infof("📊 Successfully fetched multi-timeframe market data for %d coins", len(ctx.MarketDataMap))
+
+	// Validate that enabled indicators have actual data
+	if err := validateIndicatorData(ctx.MarketDataMap, config.Indicators); err != nil {
+		return fmt.Errorf("indicator validation failed: %w", err)
+	}
+
 	return nil
 }
 
