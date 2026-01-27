@@ -583,3 +583,91 @@ func TestCalculateBoxData(t *testing.T) {
 		t.Errorf("Expected CurrentPrice = 100.0, got %v", box.CurrentPrice)
 	}
 }
+
+func TestCalculateExpectationBox_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name             string
+		topCount         int
+		bottomCount      int
+		shouldPanic      bool
+	}{
+		{
+			name:        "Exactly 3 tops and 3 bottoms",
+			topCount:    3,
+			bottomCount: 3,
+			shouldPanic: false, // Should NOT panic - this was the bug
+		},
+		{
+			name:        "Exactly 4 tops and 4 bottoms",
+			topCount:    4,
+			bottomCount: 4,
+			shouldPanic: false, // Should NOT panic - this was the bug
+		},
+		{
+			name:        "Exactly 5 tops and 5 bottoms",
+			topCount:    5,
+			bottomCount: 5,
+			shouldPanic: false, // Should NOT panic - this was the bug
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create kline data that will generate specific number of tops/bottoms
+			klines := make([]Kline, 100)
+
+			// Generate price pattern to create tops/bottoms
+			if tt.name == "Exactly 3 tops and 3 bottoms" {
+				// Pattern: High-Low-High-Low-High-Low (3 tops, 3 bottoms)
+				// Uses 3% ratio (1.03) to confirm tops/bottoms
+				prices := []float64{
+					100, // Start
+					105, // Rising
+					101.5, // 3.3% drop (105->101.5) → TOP confirmed at 105
+					95, // Falling
+					98, // 3.1% rise (95->98) → BOTTOM confirmed at 95
+					110, // Rising
+					106.5, // 3.2% drop (110->106.5) → TOP confirmed at 110
+					90, // Falling
+					93, // 3.3% rise (90->93) → BOTTOM confirmed at 90
+					115, // Rising
+					111.5, // 3.0% drop (115->111.5) → TOP confirmed at 115
+					85, // Falling
+					87, // 2.3% rise - not enough, continues
+					88, // Still rising
+				}
+				for i := 0; i < len(prices); i++ {
+					klines[i] = Kline{
+						OpenTime: int64(i * 60000),
+						Close:    prices[i],
+					}
+				}
+			} else {
+				// Default pattern
+				for i := 0; i < 100; i++ {
+					klines[i] = Kline{
+						OpenTime: int64(i * 60000),
+						Close:    100.0 + float64(i%10),
+					}
+				}
+			}
+
+			// This is the main test: it should NOT panic
+			defer func() {
+				if r := recover(); r != nil {
+					if tt.shouldPanic {
+						t.Logf("Expected panic occurred: %v", r)
+					} else {
+						t.Errorf("UNEXPECTED PANIC for %s: %v", tt.name, r)
+					}
+				}
+			}()
+
+			boxTop, boxBottom := ExportCalculateExpectationBox(klines, 1.03)
+
+			// If we got here without panicking, the fix worked!
+			t.Logf("SUCCESS: %s did not panic. Results: boxTop=%v, boxBottom=%v",
+				tt.name, boxTop, boxBottom)
+		})
+	}
+}

@@ -72,6 +72,8 @@ export function IndicatorEditor({
       atrDesc: { zh: '真实波幅均值', en: 'Average True Range' },
       boll: { zh: 'BOLL 布林带', en: 'Bollinger Bands' },
       bollDesc: { zh: '布林带指标（上中下轨）', en: 'Upper/Middle/Lower Bands' },
+      box: { zh: 'BOX 箱体', en: 'Expectation Box' },
+      boxDesc: { zh: '基于顶底箱体（支撑阻力位）', en: 'Tops/bottoms based support/resistance' },
       volume: { zh: '成交量', en: 'Volume' },
       volumeDesc: { zh: '交易量分析', en: 'Trading volume analysis' },
       oi: { zh: '持仓量', en: 'Open Interest' },
@@ -673,7 +675,8 @@ export function IndicatorEditor({
               { key: 'enable_rsi', label: 'rsi', desc: 'rsiDesc', color: '#F6465D', periodKey: 'rsi_periods', defaultPeriods: '7,14' },
               { key: 'enable_atr', label: 'atr', desc: 'atrDesc', color: '#60a5fa', periodKey: 'atr_periods', defaultPeriods: '14' },
               { key: 'enable_boll', label: 'boll', desc: 'bollDesc', color: '#ec4899', periodKey: 'boll_periods', defaultPeriods: '20' },
-            ].map(({ key, label, desc, color, periodKey, defaultPeriods }) => (
+              { key: 'enable_box', label: 'box', desc: 'boxDesc', color: '#14b8a6', ratioKey: 'box_ratio', defaultRatio: '1.03' },
+            ].map(({ key, label, desc, color, periodKey, defaultPeriods, ratioKey, defaultRatio }) => (
               <div
                 key={key}
                 className="p-2.5 rounded-lg transition-all"
@@ -712,6 +715,22 @@ export function IndicatorEditor({
                     placeholder={defaultPeriods}
                     className="w-full px-2 py-1 rounded text-[10px] text-center"
                     style={{ background: '#1E2329', border: '1px solid #2B3139', color: '#EAECEF' }}
+                  />
+                )}
+                {ratioKey && config[key as keyof IndicatorConfig] && (
+                  <input
+                    type="text"
+                    value={(config[ratioKey as keyof IndicatorConfig] as number)?.toString() || defaultRatio}
+                    onChange={(e) => {
+                      if (disabled) return
+                      const ratio = parseFloat(e.target.value.trim())
+                      onChange({ ...config, [ratioKey]: isNaN(ratio) ? 1.03 : ratio })
+                    }}
+                    disabled={disabled}
+                    placeholder={defaultRatio}
+                    className="w-full px-2 py-1 rounded text-[10px] text-center"
+                    style={{ background: '#1E2329', border: '1px solid #2B3139', color: '#EAECEF' }}
+                    title="Top/bottom detection ratio (default 1.03 = 3%, must be > 1.0)"
                   />
                 )}
               </div>

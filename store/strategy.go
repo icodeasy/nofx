@@ -130,8 +130,9 @@ type IndicatorConfig struct {
 	EnableRSI         bool `json:"enable_rsi"`
 	EnableATR         bool `json:"enable_atr"`
 	EnableBOLL        bool `json:"enable_boll"`         // Bollinger Bands
-	EnableVolume      bool `json:"enable_volume"`
-	EnableOI          bool `json:"enable_oi"`           // open interest
+	EnableBOX        bool `json:"enable_box"`         // Expectation Box (tops/bottoms support/resistance)
+	EnableVolume     bool `json:"enable_volume"`
+	EnableOI         bool `json:"enable_oi"`           // open interest
 	EnableFundingRate bool `json:"enable_funding_rate"` // funding rate
 	// EMA period configuration
 	EMAPeriods []int `json:"ema_periods,omitempty"` // default [20, 50]
@@ -141,6 +142,8 @@ type IndicatorConfig struct {
 	ATRPeriods []int `json:"atr_periods,omitempty"` // default [14]
 	// BOLL period configuration (period, standard deviation multiplier is fixed at 2)
 	BOLLPeriods []int `json:"boll_periods,omitempty"` // default [20] - can select multiple timeframes
+	// BOX period configuration (tops/bottoms ratio)
+	BOXRatio float64 `json:"box_ratio,omitempty"` // default 1.03 (3%) - price movement ratio to confirm top/bottom (> 1.0)
 	// external data sources
 	ExternalDataSources []ExternalDataSource `json:"external_data_sources,omitempty"`
 
@@ -271,6 +274,7 @@ func GetDefaultStrategyConfig(lang string) StrategyConfig {
 			EnableRSI:         false,
 			EnableATR:         false,
 			EnableBOLL:        false,
+			EnableBOX:         false,
 			EnableVolume:      true,
 			EnableOI:          true,
 			EnableFundingRate: true,
@@ -278,6 +282,7 @@ func GetDefaultStrategyConfig(lang string) StrategyConfig {
 			RSIPeriods:        []int{7, 14},
 			ATRPeriods:        []int{14},
 			BOLLPeriods:       []int{20},
+			BOXRatio:          1.03, // 3% default ratio (1.03 = 3% price movement)
 			// NofxOS unified API key
 			NofxOSAPIKey: "cm_568c67eae410d912c54c",
 			// Quant data

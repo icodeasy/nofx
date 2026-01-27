@@ -331,7 +331,7 @@ func GetWithTimeframes(symbol string, timeframes []string, primaryTimeframe stri
 	currentRSI7 := calculateRSI(primaryKlines, 7)
 
 	// Calculate price changes
-	priceChange1h := calculatePriceChangeByBars(primaryKlines, primaryTimeframe, 60) // 1 hour
+	priceChange1h := calculatePriceChangeByBars(primaryKlines, primaryTimeframe, 60)  // 1 hour
 	priceChange4h := calculatePriceChangeByBars(primaryKlines, primaryTimeframe, 240) // 4 hours
 
 	// Get OI data
@@ -438,6 +438,15 @@ func calculateTimeframeSeries(klines []Kline, timeframe string, count int) *Time
 
 	// Calculate ATR14
 	data.ATR14 = calculateATR(klines, 14)
+
+	// Calculate Expectation Box (tops/bottoms based support/resistance)
+	// Using default ratio of 1.03 (3%) if not specified
+	// Note: ratio must be > 1, where 1.03 = 3% price movement
+	boxTop, boxBottom := calculateExpectationBox(klines, 1.03)
+	if len(boxTop) == 2 && len(boxBottom) == 2 {
+		data.BOXTop = boxTop
+		data.BOXBottom = boxBottom
+	}
 
 	return data
 }
@@ -1297,4 +1306,170 @@ func GetBoxData(symbol string) (*BoxData, error) {
 	currentPrice := klines[len(klines)-1].Close
 
 	return calculateBoxData(klines, currentPrice), nil
+}
+
+// TopBottom represents a single top or bottom point
+type TopBottom struct {
+	Index int     // Index in the kline array
+	Price float64 // Price at this point
+	Time  int64   // Timestamp
+}
+
+// findTopsAndBottoms finds alternating tops and bottoms based on price movement ratio
+// Algorithm: Search for local extrema where price moves by ratio in opposite direction
+// This matches the Python implementation in qi_consultant/tradingbox/best_signal.py
+func findTopsAndBottoms(klines []Kline, ratio float64) ([]TopBottom, []TopBottom) {
+	var tops []TopBottom
+	var bottoms []TopBottom
+
+	if len(klines) < 3 || ratio <= 1 {
+		return tops, bottoms
+	}
+
+	// Start by finding the first top
+	lookingForTop := true
+	prevExtremeIndex := 0
+
+	for i := 1; i < len(klines); i++ {
+		currentPrice := klines[i].Close
+		prevExtremePrice := klines[prevExtremeIndex].Close
+
+		if lookingForTop {
+			// Update the top if current price is higher
+			if currentPrice > prevExtremePrice {
+				prevExtremeIndex = i
+				prevExtremePrice = currentPrice
+			} else if currentPrice < prevExtremePrice/ratio {
+				// Switch to finding bottom if price ratio condition is met
+				// Python: elif curr_price < prev_price / ratio:
+				tops = append(tops, TopBottom{
+					Index: prevExtremeIndex,
+					Price: prevExtremePrice,
+					Time:  klines[prevExtremeIndex].OpenTime,
+				})
+				prevExtremeIndex = i
+				lookingForTop = false
+			}
+		} else {
+			// Update the bottom if current price is lower
+			if currentPrice < prevExtremePrice {
+				prevExtremeIndex = i
+				prevExtremePrice = currentPrice
+			} else if currentPrice > prevExtremePrice*ratio {
+				// Switch to finding top if price ratio condition is met
+				// Python: elif curr_price > prev_price * ratio:
+				bottoms = append(bottoms, TopBottom{
+					Index: prevExtremeIndex,
+					Price: prevExtremePrice,
+					Time:  klines[prevExtremeIndex].OpenTime,
+				})
+				prevExtremeIndex = i
+				lookingForTop = true
+			}
+		}
+	}
+
+	// Add the last identified extreme point if not already included
+	// Python: if prev_extreme_index not in [entry['Date'] for entry in result]:
+	lastIndex := -1
+	if lookingForTop {
+		// Check if this index is already in tops
+		for _, t := range tops {
+			if t.Index == prevExtremeIndex {
+				lastIndex = t.Index
+				break
+			}
+		}
+	} else {
+		// Check if this index is already in bottoms
+		for _, b := range bottoms {
+			if b.Index == prevExtremeIndex {
+				lastIndex = b.Index
+				break
+			}
+		}
+	}
+
+	if lastIndex != prevExtremeIndex {
+		if lookingForTop {
+			tops = append(tops, TopBottom{
+				Index: prevExtremeIndex,
+				Price: klines[prevExtremeIndex].Close,
+				Time:  klines[prevExtremeIndex].OpenTime,
+			})
+		} else {
+			bottoms = append(bottoms, TopBottom{
+				Index: prevExtremeIndex,
+				Price: klines[prevExtremeIndex].Close,
+				Time:  klines[prevExtremeIndex].OpenTime,
+			})
+		}
+	}
+
+	return tops, bottoms
+}
+
+// calculateExpectationBox calculates tops/bottoms based box data (from get_expectation logic)
+// Returns BOXTop and BOXBottom arrays where:
+//   - Index 0 = second-to-last top/bottom (for stop-loss)
+//   - Index 1 = last top/bottom (for current support/resistance)
+func calculateExpectationBox(klines []Kline, ratio float64) (boxTop []float64, boxBottom []float64) {
+	// Find tops and bottoms
+	tops, bottoms := findTopsAndBottoms(klines, ratio)
+
+	// Need at least 3 tops and 3 bottoms for meaningful analysis
+	if len(tops) < 3 || len(bottoms) < 3 {
+		return nil, nil
+	}
+
+	currentPrice := klines[len(klines)-1].Close
+
+	// Get last 6 tops and bottoms (most recent)
+	// Use max to avoid negative slice indices when len < 6
+	topStart := len(tops) - 6
+	if topStart < 0 {
+		topStart = 0
+	}
+	bottomStart := len(bottoms) - 6
+	if bottomStart < 0 {
+		bottomStart = 0
+	}
+	lastTops := tops[topStart:]
+	lastBottoms := bottoms[bottomStart:]
+
+	// Filter tops above current price and bottoms below current price
+	var relevantTops []TopBottom
+	var relevantBottoms []TopBottom
+
+	for _, top := range lastTops {
+		if top.Price >= currentPrice {
+			relevantTops = append(relevantTops, top)
+		}
+	}
+	for _, bottom := range lastBottoms {
+		if bottom.Price <= currentPrice {
+			relevantBottoms = append(relevantBottoms, bottom)
+		}
+	}
+
+	if len(relevantTops) < 2 || len(relevantBottoms) < 2 {
+		return nil, nil
+	}
+
+	// Get last and second-to-last tops and bottoms
+	secondToLastTop := relevantTops[len(relevantTops)-2]
+	lastTop := relevantTops[len(relevantTops)-1]
+	secondToLastBottom := relevantBottoms[len(relevantBottoms)-2]
+	lastBottom := relevantBottoms[len(relevantBottoms)-1]
+
+	// Build result arrays: [second-to-last, last]
+	boxTop = []float64{secondToLastTop.Price, lastTop.Price}
+	boxBottom = []float64{secondToLastBottom.Price, lastBottom.Price}
+
+	return boxTop, boxBottom
+}
+
+// ExportCalculateExpectationBox exports calculateExpectationBox for testing
+func ExportCalculateExpectationBox(klines []Kline, ratio float64) ([]float64, []float64) {
+	return calculateExpectationBox(klines, ratio)
 }

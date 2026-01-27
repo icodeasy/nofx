@@ -45,6 +45,10 @@ type TimeframeSeriesData struct {
 	BOLLUpper  []float64 `json:"boll_upper"`  // Upper band
 	BOLLMiddle []float64 `json:"boll_middle"` // Middle band (SMA)
 	BOLLLower  []float64 `json:"boll_lower"`  // Lower band
+	// Expectation Box (tops/bottoms based support/resistance)
+	// Index 0 = second-to-last, Index 1 = last
+	BOXTop    []float64 `json:"box_top,omitempty"`    // Resistance levels (tops)
+	BOXBottom []float64 `json:"box_bottom,omitempty"` // Support levels (bottoms)
 }
 
 // OIData Open Interest data

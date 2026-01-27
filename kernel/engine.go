@@ -1108,6 +1108,14 @@ func (e *StrategyEngine) writeAvailableIndicators(sb *strings.Builder) {
 		sb.WriteString("\n")
 	}
 
+	if indicators.EnableBOX {
+		sb.WriteString("- Expectation Box (BOX) - Support/Resistance levels based on tops/bottoms")
+		if indicators.BOXRatio > 0 {
+			sb.WriteString(fmt.Sprintf(" (detection ratio: %.2f)", indicators.BOXRatio))
+		}
+		sb.WriteString("\n")
+	}
+
 	if indicators.EnableVolume {
 		sb.WriteString("- Volume data\n")
 	}
@@ -1554,6 +1562,13 @@ func (e *StrategyEngine) formatTimeframeSeriesData(sb *strings.Builder, data *ma
 		sb.WriteString(fmt.Sprintf("BOLL Upper: %s\n", formatFloatSlice(data.BOLLUpper)))
 		sb.WriteString(fmt.Sprintf("BOLL Middle: %s\n", formatFloatSlice(data.BOLLMiddle)))
 		sb.WriteString(fmt.Sprintf("BOLL Lower: %s\n", formatFloatSlice(data.BOLLLower)))
+	}
+
+	if indicators.EnableBOX {
+		if len(data.BOXTop) == 2 && len(data.BOXBottom) == 2 {
+			sb.WriteString(fmt.Sprintf("BOX Resistance (levels for stop-loss/current): %s\n", formatFloatSlice(data.BOXTop)))
+			sb.WriteString(fmt.Sprintf("BOX Support (levels for stop-loss/current): %s\n", formatFloatSlice(data.BOXBottom)))
+		}
 	}
 
 	sb.WriteString("\n")
