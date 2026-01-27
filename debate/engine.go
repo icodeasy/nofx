@@ -312,8 +312,14 @@ func (e *DebateEngine) buildMarketContext(session *store.DebateSessionWithDetail
 
 	// Fetch market data for each candidate
 	marketDataMap := make(map[string]*market.Data)
+	fetchConfig := market.TimeframeFetchConfig{
+		Timeframes:        timeframes,
+		PrimaryTimeframe:  primaryTimeframe,
+		DisplayCount:      klineCount,
+		BOXRatio:          1.03,
+	}
 	for _, coin := range candidates {
-		data, err := market.GetWithTimeframes(coin.Symbol, timeframes, primaryTimeframe, klineCount)
+		data, err := market.GetWithTimeframes(coin.Symbol, fetchConfig)
 		if err != nil {
 			logger.Warnf("Failed to get market data for %s: %v", coin.Symbol, err)
 			continue

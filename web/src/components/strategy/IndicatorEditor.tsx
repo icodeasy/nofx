@@ -719,12 +719,15 @@ export function IndicatorEditor({
                 )}
                 {ratioKey && config[key as keyof IndicatorConfig] && (
                   <input
-                    type="text"
+                    type="number"
+                    step="0.01"
+                    min="1.01"
+                    max="2.0"
                     value={(config[ratioKey as keyof IndicatorConfig] as number)?.toString() || defaultRatio}
                     onChange={(e) => {
                       if (disabled) return
                       const ratio = parseFloat(e.target.value.trim())
-                      onChange({ ...config, [ratioKey]: isNaN(ratio) ? 1.03 : ratio })
+                      onChange({ ...config, [ratioKey]: isNaN(ratio) || ratio < 1.01 ? 1.03 : ratio })
                     }}
                     disabled={disabled}
                     placeholder={defaultRatio}

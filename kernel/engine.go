@@ -489,9 +489,22 @@ func fetchMarketDataWithStrategy(ctx *Context, engine *StrategyEngine) error {
 
 	logger.Infof("📊 Strategy timeframes: %v, Primary: %s, Kline count: %d", timeframes, primaryTimeframe, klineCount)
 
+	// Build timeframe fetch config
+	fetchConfig := market.TimeframeFetchConfig{
+		Timeframes:        timeframes,
+		PrimaryTimeframe:  primaryTimeframe,
+		DisplayCount:      klineCount,
+		BOXRatio:          config.Indicators.BOXRatio,
+	}
+
+	// Validate BOX ratio (default 1.03 if not set or invalid)
+	if fetchConfig.BOXRatio <= 1.0 {
+		fetchConfig.BOXRatio = 1.03
+	}
+
 	// 1. First fetch data for position coins (must fetch)
 	for _, pos := range ctx.Positions {
-		data, err := market.GetWithTimeframes(pos.Symbol, timeframes, primaryTimeframe, klineCount)
+		data, err := market.GetWithTimeframes(pos.Symbol, fetchConfig)
 		if err != nil {
 			logger.Infof("⚠️  Failed to fetch market data for position %s: %v", pos.Symbol, err)
 			continue
@@ -512,7 +525,7 @@ func fetchMarketDataWithStrategy(ctx *Context, engine *StrategyEngine) error {
 			continue
 		}
 
-		data, err := market.GetWithTimeframes(coin.Symbol, timeframes, primaryTimeframe, klineCount)
+		data, err := market.GetWithTimeframes(coin.Symbol, fetchConfig)
 		if err != nil {
 			logger.Infof("⚠️  Failed to fetch market data for %s: %v", coin.Symbol, err)
 			continue

@@ -28,6 +28,28 @@ var (
 	frCacheTTL     = 1 * time.Hour
 )
 
+// TimeframeFetchConfig defines configuration for fetching market data with multiple timeframes
+type TimeframeFetchConfig struct {
+	Timeframes       []string // List of timeframes to fetch, e.g. ["5m", "15m", "1h", "4h"]
+	PrimaryTimeframe string   // Primary timeframe for calculating current indicators
+	DisplayCount     int      // Number of klines to include in output for display (BOX uses all fetched data)
+	BOXRatio         float64  // Ratio for BOX top/bottom detection (must be > 1.0, e.g. 1.03 = 3%)
+}
+
+// IndicatorCalculationConfig defines configuration for calculating indicators on a single timeframe
+type IndicatorCalculationConfig struct {
+	DisplayCount int     // Number of data points to include in output (for display)
+	BOXRatio     float64 // Ratio for BOX top/bottom detection (must be > 1.0)
+	// Future extensibility - add new indicator configs here without changing function signature
+	// EnableEMA    bool
+	// EMAPeriods  []int
+	// EnableMACD   bool
+	// EnableRSI    bool
+	// RSIPeriods  []int
+	// EnableBOLL   bool
+	// BOLLPeriods []int
+}
+
 // Note: Kline data now uses free/open API (coinank_api.Kline) which doesn't require authentication
 
 // getKlinesFromCoinAnk fetches kline data from CoinAnk API (replacement for WSMonitorCli)
@@ -243,31 +265,37 @@ func Get(symbol string) (*Data, error) {
 }
 
 // GetWithTimeframes retrieves market data for specified multiple timeframes
-// timeframes: list of timeframes, e.g. ["5m", "15m", "1h", "4h"]
-// primaryTimeframe: primary timeframe (used for calculating current indicators), defaults to timeframes[0]
-// count: number of K-lines for each timeframe
-func GetWithTimeframes(symbol string, timeframes []string, primaryTimeframe string, count int) (*Data, error) {
+// This is the preferred method - uses a config struct for easy extensibility
+func GetWithTimeframes(symbol string, config TimeframeFetchConfig) (*Data, error) {
 	symbol = Normalize(symbol)
 
-	if len(timeframes) == 0 {
+	if len(config.Timeframes) == 0 {
 		return nil, fmt.Errorf("at least one timeframe is required")
 	}
 
 	// If primary timeframe is not specified, use the first one
+	primaryTimeframe := config.PrimaryTimeframe
 	if primaryTimeframe == "" {
-		primaryTimeframe = timeframes[0]
+		primaryTimeframe = config.Timeframes[0]
 	}
 
 	// Ensure primary timeframe is in the list
 	hasPrimary := false
-	for _, tf := range timeframes {
+	for _, tf := range config.Timeframes {
 		if tf == primaryTimeframe {
 			hasPrimary = true
 			break
 		}
 	}
 	if !hasPrimary {
-		timeframes = append([]string{primaryTimeframe}, timeframes...)
+		timeframes := append([]string{primaryTimeframe}, config.Timeframes...)
+		config.Timeframes = timeframes
+	}
+
+	// Validate BOX ratio
+	boxRatio := config.BOXRatio
+	if boxRatio <= 1.0 {
+		boxRatio = 1.03 // Default to 3% if invalid
 	}
 
 	// Store data for all timeframes
@@ -278,7 +306,7 @@ func GetWithTimeframes(symbol string, timeframes []string, primaryTimeframe stri
 	isXyzAsset := IsXyzDexAsset(symbol)
 
 	// Get K-line data for each timeframe
-	for _, tf := range timeframes {
+	for _, tf := range config.Timeframes {
 		var klines []Kline
 		var err error
 
@@ -308,8 +336,12 @@ func GetWithTimeframes(symbol string, timeframes []string, primaryTimeframe stri
 			primaryKlines = klines
 		}
 
-		// Calculate series data for this timeframe (use count from config)
-		seriesData := calculateTimeframeSeries(klines, tf, count)
+		// Calculate series data for this timeframe (use display count from config)
+		calcConfig := IndicatorCalculationConfig{
+			DisplayCount: config.DisplayCount,
+			BOXRatio:     boxRatio,
+		}
+		seriesData := calculateTimeframeSeries(klines, tf, calcConfig)
 		timeframeData[tf] = seriesData
 	}
 
@@ -358,28 +390,33 @@ func GetWithTimeframes(symbol string, timeframes []string, primaryTimeframe stri
 }
 
 // calculateTimeframeSeries calculates series data for a single timeframe
-func calculateTimeframeSeries(klines []Kline, timeframe string, count int) *TimeframeSeriesData {
-	if count <= 0 {
-		count = 10 // default
+// Uses IndicatorCalculationConfig for easy extensibility - add new parameters without changing signature
+func calculateTimeframeSeries(klines []Kline, timeframe string, config IndicatorCalculationConfig) *TimeframeSeriesData {
+	// Validate and set defaults
+	if config.DisplayCount <= 0 {
+		config.DisplayCount = 10 // default
+	}
+	if config.BOXRatio <= 1.0 {
+		config.BOXRatio = 1.03 // Default to 3% if invalid
 	}
 
 	data := &TimeframeSeriesData{
 		Timeframe:   timeframe,
-		Klines:      make([]KlineBar, 0, count),
-		MidPrices:   make([]float64, 0, count),
-		EMA20Values: make([]float64, 0, count),
-		EMA50Values: make([]float64, 0, count),
-		MACDValues:  make([]float64, 0, count),
-		RSI7Values:  make([]float64, 0, count),
-		RSI14Values: make([]float64, 0, count),
-		Volume:      make([]float64, 0, count),
-		BOLLUpper:   make([]float64, 0, count),
-		BOLLMiddle:  make([]float64, 0, count),
-		BOLLLower:   make([]float64, 0, count),
+		Klines:      make([]KlineBar, 0, config.DisplayCount),
+		MidPrices:   make([]float64, 0, config.DisplayCount),
+		EMA20Values: make([]float64, 0, config.DisplayCount),
+		EMA50Values: make([]float64, 0, config.DisplayCount),
+		MACDValues:  make([]float64, 0, config.DisplayCount),
+		RSI7Values:  make([]float64, 0, config.DisplayCount),
+		RSI14Values: make([]float64, 0, config.DisplayCount),
+		Volume:      make([]float64, 0, config.DisplayCount),
+		BOLLUpper:   make([]float64, 0, config.DisplayCount),
+		BOLLMiddle:  make([]float64, 0, config.DisplayCount),
+		BOLLLower:   make([]float64, 0, config.DisplayCount),
 	}
 
-	// Get latest N data points based on count from config
-	start := len(klines) - count
+	// Get latest N data points based on display count from config
+	start := len(klines) - config.DisplayCount
 	if start < 0 {
 		start = 0
 	}
@@ -440,9 +477,10 @@ func calculateTimeframeSeries(klines []Kline, timeframe string, count int) *Time
 	data.ATR14 = calculateATR(klines, 14)
 
 	// Calculate Expectation Box (tops/bottoms based support/resistance)
-	// Using default ratio of 1.03 (3%) if not specified
-	// Note: ratio must be > 1, where 1.03 = 3% price movement
-	boxTop, boxBottom := calculateExpectationBox(klines, 1.03)
+	// BOX uses ALL available klines, not just the display count
+	// This ensures we have enough data to detect meaningful tops/bottoms (need at least 3 tops and 3 bottoms)
+	// ratio must be > 1, where 1.03 = 3% price movement required to confirm a top/bottom
+	boxTop, boxBottom := calculateExpectationBox(klines, config.BOXRatio)
 	if len(boxTop) == 2 && len(boxBottom) == 2 {
 		data.BOXTop = boxTop
 		data.BOXBottom = boxBottom
