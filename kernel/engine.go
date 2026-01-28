@@ -330,6 +330,34 @@ func GetFullDecisionWithStrategy(ctx *Context, mcpClient mcp.AIClient, engine *S
 // Market Data Fetching
 // ============================================================================
 
+// hasIndicatorData checks if a timeframe has any meaningful indicator data
+// Returns true if at least one indicator has data
+func hasIndicatorData(tfData *market.TimeframeSeriesData) bool {
+	if tfData == nil {
+		return false
+	}
+
+	// Check if we have kline data
+	if len(tfData.Klines) > 0 {
+		return true
+	}
+
+	// Check if we have any indicator data
+	hasAnyData := len(tfData.MidPrices) > 0 ||
+		len(tfData.EMA20Values) > 0 ||
+		len(tfData.EMA50Values) > 0 ||
+		len(tfData.MACDValues) > 0 ||
+		len(tfData.RSI7Values) > 0 ||
+		len(tfData.RSI14Values) > 0 ||
+		len(tfData.Volume) > 0 ||
+		len(tfData.BOLLUpper) > 0 ||
+		tfData.ATR14 > 0 ||
+		len(tfData.BOXTop) > 0 ||
+		len(tfData.BOXBottom) > 0
+
+	return hasAnyData
+}
+
 // validateIndicatorData validates that enabled indicators have actual data
 // Returns error if any enabled indicator is missing data across all symbols
 func validateIndicatorData(marketDataMap map[string]*market.Data, indicators store.IndicatorConfig) error {
@@ -1589,8 +1617,11 @@ func (e *StrategyEngine) formatMarketData(data *market.Data) string {
 		timeframeOrder := []string{"1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w"}
 		for _, tf := range timeframeOrder {
 			if tfData, ok := data.TimeframeData[tf]; ok {
-				sb.WriteString(fmt.Sprintf("=== %s Timeframe (oldest → latest) ===\n\n", strings.ToUpper(tf)))
-				e.formatTimeframeSeriesData(&sb, tfData, indicators)
+				// Only show timeframe if it has meaningful data
+				if hasIndicatorData(tfData) {
+					sb.WriteString(fmt.Sprintf("=== %s Timeframe (oldest → latest) ===\n\n", strings.ToUpper(tf)))
+					e.formatTimeframeSeriesData(&sb, tfData, indicators)
+				}
 			}
 		}
 	} else {

@@ -319,7 +319,7 @@ func formatKlineDataZH(symbol string, tfData map[string]*market.TimeframeSeriesD
 	var sb strings.Builder
 
 	for _, tf := range timeframes {
-		if data, ok := tfData[tf]; ok && len(data.Klines) > 0 {
+		if data, ok := tfData[tf]; ok && hasIndicatorData(data) {
 			sb.WriteString(fmt.Sprintf("#### %s 时间框架 (从旧到新)\n\n", tf))
 			sb.WriteString("```\n")
 			sb.WriteString("时间(UTC)      开盘      最高      最低      收盘      成交量\n")
@@ -586,7 +586,7 @@ func formatKlineDataEN(symbol string, tfData map[string]*market.TimeframeSeriesD
 	sort.Strings(sortedTF)
 
 	for _, tf := range sortedTF {
-		if data, ok := tfData[tf]; ok && len(data.Klines) > 0 {
+		if data, ok := tfData[tf]; ok && hasIndicatorData(data) {
 			sb.WriteString(fmt.Sprintf("#### %s Timeframe (oldest → latest)\n\n", tf))
 			sb.WriteString("```\n")
 			sb.WriteString("Time(UTC)      Open      High      Low       Close     Volume\n")
