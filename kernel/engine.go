@@ -519,10 +519,10 @@ func fetchMarketDataWithStrategy(ctx *Context, engine *StrategyEngine) error {
 
 	// Build timeframe fetch config
 	fetchConfig := market.TimeframeFetchConfig{
-		Timeframes:        timeframes,
-		PrimaryTimeframe:  primaryTimeframe,
-		DisplayCount:      klineCount,
-		BOXRatio:          config.Indicators.BOXRatio,
+		Timeframes:       timeframes,
+		PrimaryTimeframe: primaryTimeframe,
+		DisplayCount:     klineCount,
+		BOXRatio:         config.Indicators.BOXRatio,
 	}
 
 	// Validate BOX ratio (default 1.03 if not set or invalid)
@@ -1102,137 +1102,142 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 	riskControl := e.config.RiskControl
 	promptSections := e.config.PromptSections
 
-	// 0. Data Dictionary & Schema (ensure AI understands all fields)
+	// 0. Data Dictionary & Schema
 	lang := e.GetLanguage()
-	schemaPrompt := GetSchemaPrompt(lang)
-	sb.WriteString(schemaPrompt)
-	sb.WriteString("\n\n")
-	sb.WriteString("---\n\n")
+	sb.WriteString(GetSchemaPrompt(lang))
+	sb.WriteString("\n\n---\n\n")
 
-	// 1. Role definition (editable)
+	// 1. Role Definition
 	if promptSections.RoleDefinition != "" {
 		sb.WriteString(promptSections.RoleDefinition)
 		sb.WriteString("\n\n")
 	} else {
-		sb.WriteString("# You are a professional cryptocurrency trading AI\n\n")
-		sb.WriteString("Your task is to make trading decisions based on provided market data.\n\n")
+		sb.WriteString("# Role\n")
+		sb.WriteString("You are a professional cryptocurrency trading AI.\n")
+		sb.WriteString("You must generate deterministic, rule-compliant trading decisions based on provided data.\n\n")
 	}
 
-	// 2. Trading mode variant
+	// 2. Trading Mode Variant
 	switch strings.ToLower(strings.TrimSpace(variant)) {
 	case "aggressive":
-		sb.WriteString("## Mode: Aggressive\n- Prioritize capturing trend breakouts, can build positions in batches when confidence ≥ 70\n- Allow higher positions, but must strictly set stop-loss and explain risk-reward ratio\n\n")
+		sb.WriteString("## Mode: Aggressive\n")
+		sb.WriteString("- Capture breakouts and strong trends\n")
+		sb.WriteString("- Batch entries allowed when confidence ≥ 70\n")
+		sb.WriteString("- Stop-loss is mandatory for all positions\n\n")
 	case "conservative":
-		sb.WriteString("## Mode: Conservative\n- Only open positions when multiple signals resonate\n- Prioritize cash preservation, must pause for multiple periods after consecutive losses\n\n")
+		sb.WriteString("## Mode: Conservative\n")
+		sb.WriteString("- Capital preservation first\n")
+		sb.WriteString("- Multi-signal confirmation required\n")
+		sb.WriteString("- Pause trading after consecutive losses\n\n")
 	case "scalping":
-		sb.WriteString("## Mode: Scalping\n- Focus on short-term momentum, smaller profit targets but require quick action\n- If price doesn't move as expected within two bars, immediately reduce position or stop-loss\n\n")
+		sb.WriteString("## Mode: Scalping\n")
+		sb.WriteString("- Short-term momentum only\n")
+		sb.WriteString("- If no favorable move within 2 bars → reduce or exit\n\n")
 	}
 
-	// 3. Hard constraints (risk control)
-	btcEthPosValueRatio := riskControl.BTCETHMaxPositionValueRatio
-	if btcEthPosValueRatio <= 0 {
-		btcEthPosValueRatio = 5.0
+	// 3. Hard Constraints (Risk Control)
+	btcEthRatio := riskControl.BTCETHMaxPositionValueRatio
+	if btcEthRatio <= 0 {
+		btcEthRatio = 5.0
 	}
-	altcoinPosValueRatio := riskControl.AltcoinMaxPositionValueRatio
-	if altcoinPosValueRatio <= 0 {
-		altcoinPosValueRatio = 1.0
+	altRatio := riskControl.AltcoinMaxPositionValueRatio
+	if altRatio <= 0 {
+		altRatio = 1.0
 	}
 
-	sb.WriteString("# Hard Constraints (Risk Control)\n\n")
-	sb.WriteString("## CODE ENFORCED (Backend validation, cannot be bypassed):\n")
-	sb.WriteString(fmt.Sprintf("- Max Positions: %d coins simultaneously\n", riskControl.MaxPositions))
-	sb.WriteString(fmt.Sprintf("- Position Value Limit (Altcoins): max %.0f USDT (= equity %.0f × %.1fx)\n",
-		accountEquity*altcoinPosValueRatio, accountEquity, altcoinPosValueRatio))
-	sb.WriteString(fmt.Sprintf("- Position Value Limit (BTC/ETH): max %.0f USDT (= equity %.0f × %.1fx)\n",
-		accountEquity*btcEthPosValueRatio, accountEquity, btcEthPosValueRatio))
-	sb.WriteString(fmt.Sprintf("- Max Margin Usage: ≤%.0f%%\n", riskControl.MaxMarginUsage*100))
-	sb.WriteString(fmt.Sprintf("- Min Position Size: ≥%.0f USDT\n\n", riskControl.MinPositionSize))
-	sb.WriteString(fmt.Sprintf("**CRITICAL WARNING**: Any opening decision with position_size_usd < %.0f USDT will be REJECTED by backend validation. ", riskControl.MinPositionSize))
-	sb.WriteString(fmt.Sprintf("You MUST ensure position_size_usd >= %.0f USDT for ALL open_long and open_short decisions.\n\n", riskControl.MinPositionSize))
+	sb.WriteString("# Hard Constraints (ENFORCED)\n\n")
+	sb.WriteString("## Backend Validated (Cannot Be Bypassed)\n")
+	sb.WriteString(fmt.Sprintf("- Max concurrent positions: %d\n", riskControl.MaxPositions))
+	sb.WriteString(fmt.Sprintf("- Altcoin position value ≤ %.0f USDT (equity %.0f × %.1fx)\n", accountEquity*altRatio, accountEquity, altRatio))
+	sb.WriteString(fmt.Sprintf("- BTC/ETH position value ≤ %.0f USDT (equity %.0f × %.1fx)\n", accountEquity*btcEthRatio, accountEquity, btcEthRatio))
+	sb.WriteString(fmt.Sprintf("- Max margin usage: ≤ %.0f%%\n", riskControl.MaxMarginUsage*100))
+	sb.WriteString(fmt.Sprintf("- Min position size: ≥ %.0f USDT\n\n", riskControl.MinPositionSize))
 
-	sb.WriteString("## AI GUIDED (Recommended, you should follow):\n")
-	sb.WriteString(fmt.Sprintf("- Trading Leverage: Altcoins max %dx | BTC/ETH max %dx\n",
-		riskControl.AltcoinMaxLeverage, riskControl.BTCETHMaxLeverage))
-	sb.WriteString(fmt.Sprintf("- Risk-Reward Ratio: ≥1:%.1f (take_profit / stop_loss)\n", riskControl.MinRiskRewardRatio))
-	sb.WriteString(fmt.Sprintf("- Min Confidence: ≥%d to open position\n\n", riskControl.MinConfidence))
+	sb.WriteString(fmt.Sprintf(
+		"CRITICAL: Any open_long or open_short with position_size_usd < %.0f WILL BE REJECTED.\n\n",
+		riskControl.MinPositionSize,
+	))
 
-	// Position sizing guidance
-	sb.WriteString("## Position Sizing Guidance\n")
-	sb.WriteString("Calculate `position_size_usd` based on your confidence and the Position Value Limits above:\n")
-	sb.WriteString("- High confidence (≥85): Use 80-100%% of max position value limit\n")
-	sb.WriteString("- Medium confidence (70-84): Use 50-80%% of max position value limit\n")
-	sb.WriteString("- Low confidence (60-69): Use 30-50%% of max position value limit\n")
-	sb.WriteString(fmt.Sprintf("- Example: With equity %.0f and BTC/ETH ratio %.1fx, max is %.0f USDT\n",
-		accountEquity, btcEthPosValueRatio, accountEquity*btcEthPosValueRatio))
-	sb.WriteString("- **DO NOT** just use available_balance as position_size_usd. Use the Position Value Limits!\n")
-	sb.WriteString(fmt.Sprintf("- **MANDATORY**: position_size_usd must be ≥ %.0f USDT. Smaller positions will be REJECTED.\n\n", riskControl.MinPositionSize))
+	sb.WriteString("## AI Guidance (Must Follow)\n")
+	sb.WriteString(fmt.Sprintf("- Max leverage: Altcoins %dx | BTC/ETH %dx\n", riskControl.AltcoinMaxLeverage, riskControl.BTCETHMaxLeverage))
+	sb.WriteString(fmt.Sprintf("- Min risk-reward ratio: 1:%.1f\n", riskControl.MinRiskRewardRatio))
+	sb.WriteString(fmt.Sprintf("- Min confidence to open: %d\n\n", riskControl.MinConfidence))
 
-	// 4. Trading frequency (editable)
+	// 4. Position Sizing Rules
+	sb.WriteString("## Position Sizing Rules\n")
+	sb.WriteString("- position_size_usd MUST be derived from Position Value Limits\n")
+	sb.WriteString("- available_balance MUST NOT be used for sizing\n")
+	sb.WriteString("- position_size_usd < minimum WILL BE REJECTED\n")
+	sb.WriteString("- Confidence mapping:\n")
+	sb.WriteString("  - ≥85 → 80–100% of max limit\n")
+	sb.WriteString("  - 70–84 → 50–80% of max limit\n")
+	sb.WriteString("  - 60–69 → 30–50% of max limit\n\n")
+
+	// 5. Trading Frequency Rules
 	if promptSections.TradingFrequency != "" {
 		sb.WriteString(promptSections.TradingFrequency)
 		sb.WriteString("\n\n")
 	} else {
-		sb.WriteString("# ⏱️ Trading Frequency Awareness\n\n")
-		sb.WriteString("- Excellent traders: 2-4 trades/day ≈ 0.1-0.2 trades/hour\n")
-		sb.WriteString("- >2 trades/hour = Overtrading\n")
-		sb.WriteString("- Single position hold time ≥ 30-60 minutes\n")
-		sb.WriteString("If you find yourself trading every period → standards too low; if closing positions < 30 minutes → too impatient.\n\n")
+		sb.WriteString("# Trading Frequency Rules\n")
+		sb.WriteString("- Max trades per day: 4\n")
+		sb.WriteString("- Max trades per hour: 0.2\n")
+		sb.WriteString("- Min holding time per position: 30 minutes\n")
+		sb.WriteString("- Violations indicate overtrading\n\n")
 	}
 
-	// 5. Entry standards (editable)
-	if promptSections.EntryStandards != "" {
-		sb.WriteString(promptSections.EntryStandards)
-		sb.WriteString("\n\nYou have the following indicator data:\n")
-		e.writeAvailableIndicators(&sb)
-		sb.WriteString(fmt.Sprintf("\n**Confidence ≥ %d** required to open positions.\n\n", riskControl.MinConfidence))
-	} else {
-		sb.WriteString("# 🎯 Entry Standards (Strict)\n\n")
-		sb.WriteString("Only open positions when multiple signals resonate. You have:\n")
-		e.writeAvailableIndicators(&sb)
-		sb.WriteString(fmt.Sprintf("\nFeel free to use any effective analysis method, but **confidence ≥ %d** required to open positions; avoid low-quality behaviors such as single indicators, contradictory signals, sideways consolidation, reopening immediately after closing, etc.\n\n", riskControl.MinConfidence))
-	}
+	// 6. Entry Standards
+	sb.WriteString("# Entry Rules (Strict)\n")
+	sb.WriteString("- Multiple independent signals must align\n")
+	sb.WriteString("- Single-indicator decisions are forbidden\n")
+	sb.WriteString("- Contradictory signals are forbidden\n")
+	sb.WriteString("- Sideways or low-volatility markets are forbidden\n")
+	sb.WriteString("- Immediate re-entry after exit is forbidden\n")
+	sb.WriteString(fmt.Sprintf("- Confidence must be ≥ %d\n\n", riskControl.MinConfidence))
 
-	// 6. Decision process (editable)
-	if promptSections.DecisionProcess != "" {
-		sb.WriteString(promptSections.DecisionProcess)
-		sb.WriteString("\n\n")
-	} else {
-		sb.WriteString("# 📋 Decision Process\n\n")
-		sb.WriteString("1. Check positions → Should we take profit/stop-loss\n")
-		sb.WriteString("2. Scan candidate coins + multi-timeframe → Are there strong signals\n")
-		sb.WriteString("3. Write chain of thought first, then output structured JSON\n\n")
-	}
+	sb.WriteString("## Available Indicators\n")
+	e.writeAvailableIndicators(&sb)
+	sb.WriteString("\n")
 
-	// 7. Output format
-	sb.WriteString("# Output Format (Strictly Follow)\n\n")
-	sb.WriteString("**Must use XML tags <reasoning> and <decision> to separate chain of thought and decision JSON, avoiding parsing errors**\n\n")
-	sb.WriteString("## Format Requirements\n\n")
+	// 7. Decision Process
+	sb.WriteString("# Decision Order (Mandatory)\n")
+	sb.WriteString("1. Manage existing positions (take-profit / stop-loss)\n")
+	sb.WriteString("2. Evaluate new entries (multi-timeframe confirmation)\n")
+	sb.WriteString("3. Output structured decision JSON only\n\n")
+
+	// 8. Output Format
+	sb.WriteString("# Output Format (Strict)\n\n")
+	sb.WriteString("Use EXACT XML tags. Do NOT add extra text.\n\n")
+
 	sb.WriteString("<reasoning>\n")
-	sb.WriteString("Your chain of thought analysis...\n")
-	sb.WriteString("- Briefly analyze your thinking process \n")
+	sb.WriteString("Provide a concise reasoning summary.\n")
+	sb.WriteString("Do NOT reveal full chain-of-thought.\n")
 	sb.WriteString("</reasoning>\n\n")
+
 	sb.WriteString("<decision>\n")
-	sb.WriteString("Step 2: JSON decision array\n\n")
 	sb.WriteString("```json\n[\n")
-	// Use the actual configured position value ratio for BTC/ETH in the example
-	examplePositionSize := accountEquity * btcEthPosValueRatio
-	sb.WriteString(fmt.Sprintf("  {\"symbol\": \"BTCUSDT\", \"action\": \"open_short\", \"leverage\": %d, \"position_size_usd\": %.0f, \"stop_loss\": 97000, \"take_profit\": 91000, \"confidence\": 85, \"risk_usd\": 300},\n",
-		riskControl.BTCETHMaxLeverage, examplePositionSize))
-	sb.WriteString("  {\"symbol\": \"ETHUSDT\", \"action\": \"close_long\"}\n")
+
+	examplePos := accountEquity * btcEthRatio
+	sb.WriteString(fmt.Sprintf(
+		"  {\"symbol\":\"BTCUSDT\",\"action\":\"open_short\",\"leverage\":%d,\"position_size_usd\":%.0f,\"stop_loss\":97000,\"take_profit\":91000,\"confidence\":85,\"risk_usd\":300},\n",
+		riskControl.BTCETHMaxLeverage,
+		examplePos,
+	))
+	sb.WriteString("  {\"symbol\":\"ETHUSDT\",\"action\":\"close_long\"}\n")
 	sb.WriteString("]\n```\n")
 	sb.WriteString("</decision>\n\n")
-	sb.WriteString("## Field Description\n\n")
-	sb.WriteString("- `action`: open_long | open_short | close_long | close_short | hold | wait\n")
-	sb.WriteString(fmt.Sprintf("- `confidence`: 0-100 (opening recommended ≥ %d)\n", riskControl.MinConfidence))
-	sb.WriteString("- Required when opening: leverage, position_size_usd, stop_loss, take_profit, confidence, risk_usd\n")
-	sb.WriteString("- **IMPORTANT**: All numeric values must be calculated numbers, NOT formulas/expressions (e.g., use `27.76` not `3000 * 0.01`)\n\n")
 
-	// 8. Custom Prompt
+	sb.WriteString("# Field Requirements\n")
+	sb.WriteString("- action: open_long | open_short | close_long | close_short | hold | wait\n")
+	sb.WriteString(fmt.Sprintf("- confidence: 0–100 (open ≥ %d)\n", riskControl.MinConfidence))
+	sb.WriteString("- Opening requires: leverage, position_size_usd, stop_loss, take_profit, confidence, risk_usd\n")
+	sb.WriteString("- All numeric values MUST be explicit numbers (no formulas)\n\n")
+
+	// 9. Custom Strategy Overlay
 	if e.config.CustomPrompt != "" {
-		sb.WriteString("# 📌 Personalized Trading Strategy\n\n")
+		sb.WriteString("# Custom Strategy Overlay\n")
 		sb.WriteString(e.config.CustomPrompt)
 		sb.WriteString("\n\n")
-		sb.WriteString("Note: The above personalized strategy is a supplement to the basic rules and cannot violate the basic risk control principles.\n")
+		sb.WriteString("Custom strategy MUST NOT violate hard constraints.\n")
 	}
 
 	return sb.String()
