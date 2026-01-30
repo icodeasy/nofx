@@ -443,21 +443,26 @@ var CommonMistakes = []CommonMistake{
 // ========== Prompt生成函数 ==========
 
 // GetSchemaPrompt 生成Schema说明文本，用于AI Prompt
-func GetSchemaPrompt(lang Language) string {
+// maxMarginUsage: 0 = muted (don't show margin risk warning), >0 = show constraint
+func GetSchemaPrompt(lang Language, maxMarginUsage float64) string {
 	if lang == LangChinese {
-		return getSchemaPromptZH()
+		return getSchemaPromptZH(maxMarginUsage)
 	}
-	return getSchemaPromptEN()
+	return getSchemaPromptEN(maxMarginUsage)
 }
 
 // getSchemaPromptZH 生成中文Prompt
-func getSchemaPromptZH() string {
+func getSchemaPromptZH(maxMarginUsage float64) string {
 	prompt := "# 📖 数据字典与交易规则\n\n"
 	prompt += "## 📊 字段含义说明\n\n"
 
 	// 账户指标
 	prompt += "### 账户指标\n"
 	for key, field := range DataDictionary["AccountMetrics"] {
+		// Skip margin field if constraint is muted
+		if key == "Margin" && maxMarginUsage == 0 {
+			continue
+		}
 		prompt += formatFieldDefZH(key, field)
 	}
 
@@ -490,13 +495,17 @@ func getSchemaPromptZH() string {
 }
 
 // getSchemaPromptEN 生成英文Prompt
-func getSchemaPromptEN() string {
+func getSchemaPromptEN(maxMarginUsage float64) string {
 	prompt := "# 📖 Data Dictionary & Trading Rules\n\n"
 	prompt += "## 📊 Field Definitions\n\n"
 
 	// Account Metrics
 	prompt += "### Account Metrics\n"
 	for key, field := range DataDictionary["AccountMetrics"] {
+		// Skip margin field if constraint is muted
+		if key == "Margin" && maxMarginUsage == 0 {
+			continue
+		}
 		prompt += formatFieldDefEN(key, field)
 	}
 

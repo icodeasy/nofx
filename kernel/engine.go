@@ -1131,7 +1131,7 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 
 	// 0. Data Dictionary & Schema
 	lang := e.GetLanguage()
-	sb.WriteString(GetSchemaPrompt(lang))
+	sb.WriteString(GetSchemaPrompt(lang, riskControl.MaxMarginUsage))
 	sb.WriteString("\n\n---\n\n")
 
 	// 1. Role Definition
@@ -1177,7 +1177,13 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 	sb.WriteString(fmt.Sprintf("- Max concurrent positions: %d\n", riskControl.MaxPositions))
 	sb.WriteString(fmt.Sprintf("- Altcoin position value ≤ %.0f USDT (equity %.0f × %.1fx)\n", accountEquity*altRatio, accountEquity, altRatio))
 	sb.WriteString(fmt.Sprintf("- BTC/ETH position value ≤ %.0f USDT (equity %.0f × %.1fx)\n", accountEquity*btcEthRatio, accountEquity, btcEthRatio))
-	sb.WriteString(fmt.Sprintf("- Max margin usage: ≤ %.0f%%\n", riskControl.MaxMarginUsage*100))
+
+	// Max margin usage constraint (can be muted by setting to 0)
+	if riskControl.MaxMarginUsage > 0 {
+		sb.WriteString(fmt.Sprintf("- Max margin usage: ≤ %.0f%%\n", riskControl.MaxMarginUsage*100))
+	} else {
+		sb.WriteString("- Max margin usage: 100% (margin constraint disabled - focus on profit ratio)\n")
+	}
 	sb.WriteString(fmt.Sprintf("- Min position size: ≥ %.0f USDT\n\n", riskControl.MinPositionSize))
 
 	sb.WriteString(fmt.Sprintf(

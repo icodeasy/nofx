@@ -16,11 +16,18 @@ import (
 // ============================================================================
 
 // FormatContextForAI 将交易上下文格式化为AI可理解的文本（包含Schema）
+// For backward compatibility, uses default maxMarginUsage (0.9 = show constraint)
 func FormatContextForAI(ctx *Context, lang Language) string {
+	return FormatContextForAIWithMargin(ctx, lang, 0.9)
+}
+
+// FormatContextForAIWithMargin 将交易上下文格式化为AI可理解的文本（包含Schema）
+// maxMarginUsage: 0 = muted (don't show margin field in schema), >0 = show constraint
+func FormatContextForAIWithMargin(ctx *Context, lang Language, maxMarginUsage float64) string {
 	var sb strings.Builder
 
 	// 1. 添加Schema说明（让AI理解数据格式）
-	sb.WriteString(GetSchemaPrompt(lang))
+	sb.WriteString(GetSchemaPrompt(lang, maxMarginUsage))
 	sb.WriteString("\n---\n\n")
 
 	// 2. 当前状态概览
