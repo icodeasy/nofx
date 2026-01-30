@@ -85,7 +85,8 @@ func TestLeverageFallback(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Use default position value ratios for testing (10x for BTC/ETH, 1.5x for altcoins)
 			// Use minPositionSize of 12.0 USDT for testing
-			err := validateDecision(&tt.decision, tt.accountEquity, tt.btcEthLeverage, tt.altcoinLeverage, 10.0, 1.5, 12.0)
+			// Use minConfidence of 0.0 (disabled) for testing
+			err := validateDecision(&tt.decision, tt.accountEquity, tt.btcEthLeverage, tt.altcoinLeverage, 10.0, 1.5, 12.0, 0.0)
 
 			// Check error status
 			if (err != nil) != tt.wantError {

@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"nofx/kernel"
 	"nofx/experience"
+	"nofx/kernel"
 	"nofx/logger"
 	"nofx/market"
 	"nofx/mcp"
@@ -35,13 +35,13 @@ type AutoTraderConfig struct {
 	BybitSecretKey string
 
 	// OKX API configuration
-	OKXAPIKey    string
-	OKXSecretKey string
+	OKXAPIKey     string
+	OKXSecretKey  string
 	OKXPassphrase string
 
 	// Bitget API configuration
-	BitgetAPIKey    string
-	BitgetSecretKey string
+	BitgetAPIKey     string
+	BitgetSecretKey  string
 	BitgetPassphrase string
 
 	// Hyperliquid configuration
@@ -103,9 +103,9 @@ type AutoTrader struct {
 	config                AutoTraderConfig
 	trader                Trader // Use Trader interface (supports multiple platforms)
 	mcpClient             mcp.AIClient
-	store                 *store.Store             // Data storage (decision records, etc.)
+	store                 *store.Store           // Data storage (decision records, etc.)
 	strategyEngine        *kernel.StrategyEngine // Strategy engine (uses strategy configuration)
-	cycleNumber           int                      // Current cycle number
+	cycleNumber           int                    // Current cycle number
 	initialBalance        float64
 	dailyPnL              float64
 	customPrompt          string // Custom trading strategy prompt
@@ -869,7 +869,70 @@ func (at *AutoTrader) buildTradingContext() (*kernel.Context, error) {
 		CandidateCoins: candidateCoins,
 	}
 
-	// 7. Add recent closed trades (if store is available)
+	// 7.5. Fetch open orders (stop-loss, take-profit) for all position symbols
+	openOrdersMap := make(map[string][]kernel.OpenOrder)
+	for _, pos := range positionInfos {
+		if openOrders, err := at.trader.GetOpenOrders(pos.Symbol); err == nil && len(openOrders) > 0 {
+			// Convert trader.OpenOrder to kernel.OpenOrder
+			var kernelOrders []kernel.OpenOrder
+			for _, order := range openOrders {
+				kernelOrders = append(kernelOrders, kernel.OpenOrder{
+					OrderID:      order.OrderID,
+					Symbol:       order.Symbol,
+					Side:         order.Side,
+					PositionSide: order.PositionSide,
+					Type:         order.Type,
+					Price:        order.Price,
+					StopPrice:    order.StopPrice,
+					Quantity:     order.Quantity,
+					Status:       order.Status,
+				})
+			}
+			openOrdersMap[pos.Symbol] = kernelOrders
+		}
+	}
+	ctx.OpenOrders = openOrdersMap
+
+	// 8. Fetch AI decision parameters (SL/TP) from DecisionAction records
+	// This provides complete SL/TP info, unlike OpenOrder which only has StopPrice
+	if at.store != nil {
+		positionDecisions := make(map[string]*kernel.PositionDecision)
+		// Use OpenOrders to get the OrderID, then query DecisionAction by OrderID
+		for _, orders := range ctx.OpenOrders {
+			for _, order := range orders {
+				// Parse OrderID from string to int64
+				var orderID int64
+				if _, err := fmt.Sscanf(order.OrderID, "%d", &orderID); err == nil && orderID > 0 {
+					// Query DecisionAction by OrderID
+					if decAction, err := at.store.Decision().GetRecentDecisionAction(at.id, orderID); err == nil && decAction != nil {
+						// Determine side from position side
+						posSide := strings.ToLower(order.PositionSide)
+						if posSide == "both" || posSide == "" {
+							posSide = strings.ToLower(order.Side)
+						}
+						// Convert LONG/SHORT to long/short
+						if posSide == "long" || posSide == "short" {
+							// Use OrderID as key for exact match
+							posKey := fmt.Sprintf("%d", orderID)
+							positionDecisions[posKey] = &kernel.PositionDecision{
+								Symbol:     order.Symbol,
+								Side:       posSide,
+								StopLoss:   decAction.StopLoss,
+								TakeProfit: decAction.TakeProfit,
+								Confidence: decAction.Confidence,
+							}
+						}
+					}
+				}
+			}
+		}
+		ctx.PositionDecisions = positionDecisions
+		if len(positionDecisions) > 0 {
+			logger.Infof("📊 [%s] Loaded AI decision parameters (SL/TP) for %d positions using OrderID", at.name, len(positionDecisions))
+		}
+	}
+
+	// 9. Add recent closed trades (if store is available)
 	if at.store != nil {
 		// Get recent 10 closed trades for AI context
 		recentTrades, err := at.store.Position().GetRecentTrades(at.id, 10)
@@ -927,7 +990,7 @@ func (at *AutoTrader) buildTradingContext() (*kernel.Context, error) {
 		logger.Infof("⚠️ [%s] Store is nil, cannot get recent trades", at.name)
 	}
 
-	// 8. Get quantitative data (if enabled in strategy config)
+	// 10. Get quantitative data (if enabled in strategy config)
 	if strategyConfig.Indicators.EnableQuantData {
 		// Collect symbols to query (candidate coins + position coins)
 		symbolsToQuery := make(map[string]bool)
@@ -948,7 +1011,7 @@ func (at *AutoTrader) buildTradingContext() (*kernel.Context, error) {
 		logger.Infof("📊 [%s] Successfully fetched quantitative data for %d symbols", at.name, len(ctx.QuantDataMap))
 	}
 
-	// 9. Get OI ranking data (market-wide position changes)
+	// 11. Get OI ranking data (market-wide position changes)
 	if strategyConfig.Indicators.EnableOIRanking {
 		logger.Infof("📊 [%s] Fetching OI ranking data...", at.name)
 		ctx.OIRankingData = at.strategyEngine.FetchOIRankingData()
@@ -958,7 +1021,7 @@ func (at *AutoTrader) buildTradingContext() (*kernel.Context, error) {
 		}
 	}
 
-	// 10. Get NetFlow ranking data (market-wide fund flow)
+	// 12. Get NetFlow ranking data (market-wide fund flow)
 	if strategyConfig.Indicators.EnableNetFlowRanking {
 		logger.Infof("💰 [%s] Fetching NetFlow ranking data...", at.name)
 		ctx.NetFlowRankingData = at.strategyEngine.FetchNetFlowRankingData()
@@ -968,7 +1031,7 @@ func (at *AutoTrader) buildTradingContext() (*kernel.Context, error) {
 		}
 	}
 
-	// 11. Get Price ranking data (market-wide gainers/losers)
+	// 13. Get Price ranking data (market-wide gainers/losers)
 	if strategyConfig.Indicators.EnablePriceRanking {
 		logger.Infof("📈 [%s] Fetching Price ranking data...", at.name)
 		ctx.PriceRankingData = at.strategyEngine.FetchPriceRankingData()
@@ -2124,22 +2187,22 @@ func (at *AutoTrader) recordOrderFill(orderRecordID int64, exchangeOrderID, symb
 	normalizedSymbol := market.Normalize(symbol)
 
 	fill := &store.TraderFill{
-		TraderID:         at.id,
-		ExchangeID:       at.exchangeID,
-		ExchangeType:     at.exchange,
-		OrderID:          orderRecordID,
-		ExchangeOrderID:  exchangeOrderID,
-		ExchangeTradeID:  tradeID,
-		Symbol:           normalizedSymbol,
-		Side:             side,
-		Price:            price,
-		Quantity:         quantity,
-		QuoteQuantity:    price * quantity,
-		Commission:       fee,
-		CommissionAsset:  "USDT",
-		RealizedPnL:      0, // Will be calculated for close orders
-		IsMaker:          false, // Market orders are usually taker
-		CreatedAt:        time.Now().UTC().UnixMilli(),
+		TraderID:        at.id,
+		ExchangeID:      at.exchangeID,
+		ExchangeType:    at.exchange,
+		OrderID:         orderRecordID,
+		ExchangeOrderID: exchangeOrderID,
+		ExchangeTradeID: tradeID,
+		Symbol:          normalizedSymbol,
+		Side:            side,
+		Price:           price,
+		Quantity:        quantity,
+		QuoteQuantity:   price * quantity,
+		Commission:      fee,
+		CommissionAsset: "USDT",
+		RealizedPnL:     0,     // Will be calculated for close orders
+		IsMaker:         false, // Market orders are usually taker
+		CreatedAt:       time.Now().UTC().UnixMilli(),
 	}
 
 	// Calculate realized PnL for close orders
@@ -2267,4 +2330,3 @@ func getSideFromAction(action string) string {
 func (at *AutoTrader) GetOpenOrders(symbol string) ([]OpenOrder, error) {
 	return at.trader.GetOpenOrders(symbol)
 }
-

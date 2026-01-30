@@ -311,3 +311,41 @@ func (s *DecisionStore) GetLastCycleNumber(traderID string) (int, error) {
 	}
 	return *cycleNumber, nil
 }
+
+// GetRecentDecisionAction gets the most recent DecisionAction for a specific order ID
+// Used to retrieve AI decision parameters (stop_loss, take_profit) for displaying in context
+// Returns nil if no matching decision found
+func (s *DecisionStore) GetRecentDecisionAction(traderID string, orderID int64) (*DecisionAction, error) {
+	var dbRecords []*DecisionRecordDB
+
+	// Query latest decision records for this trader
+	err := s.db.Where("trader_id = ?", traderID).
+		Order("timestamp DESC").
+		Limit(20).
+		Find(&dbRecords).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to query decision records: %w", err)
+	}
+
+	if len(dbRecords) == 0 {
+		return nil, nil
+	}
+
+	// Parse decisions from records and find matching order ID
+	for _, dbRec := range dbRecords {
+		var decisions []DecisionAction
+		if err := json.Unmarshal([]byte(dbRec.Decisions), &decisions); err != nil {
+			continue
+		}
+
+		// Find matching decision by OrderID
+		for _, dec := range decisions {
+			if dec.OrderID == orderID {
+				// Found matching decision - return copy
+				return &dec, nil
+			}
+		}
+	}
+
+	return nil, nil
+}

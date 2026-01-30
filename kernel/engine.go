@@ -104,6 +104,29 @@ type RecentOrder struct {
 	HoldDuration string  `json:"hold_duration"` // Hold duration, e.g. "2h30m"
 }
 
+// PositionDecision stores the AI decision parameters (SL/TP) that opened or last modified a position
+// This provides complete SL/TP info, unlike OpenOrder which only has StopPrice
+type PositionDecision struct {
+	Symbol     string  `json:"symbol"`
+	Side       string  `json:"side"`        // long/short
+	StopLoss   float64 `json:"stop_loss"`   // Stop loss price from AI decision
+	TakeProfit float64 `json:"take_profit"` // Take profit price from AI decision
+	Confidence int     `json:"confidence"`  // AI confidence level
+}
+
+// OpenOrder represents a pending order on the exchange (SL/TP)
+type OpenOrder struct {
+	OrderID      string  `json:"order_id"`
+	Symbol       string  `json:"symbol"`
+	Side         string  `json:"side"`          // BUY/SELL
+	PositionSide string  `json:"position_side"` // LONG/SHORT
+	Type         string  `json:"type"`          // LIMIT/STOP_MARKET/TAKE_PROFIT_MARKET
+	Price        float64 `json:"price"`         // Order price (for limit orders)
+	StopPrice    float64 `json:"stop_price"`    // Trigger price (for stop orders)
+	Quantity     float64 `json:"quantity"`
+	Status       string  `json:"status"` // NEW
+}
+
 // Context trading context (complete information passed to AI)
 type Context struct {
 	CurrentTime        string                             `json:"current_time"`
@@ -111,6 +134,8 @@ type Context struct {
 	CallCount          int                                `json:"call_count"`
 	Account            AccountInfo                        `json:"account"`
 	Positions          []PositionInfo                     `json:"positions"`
+	PositionDecisions  map[string]*PositionDecision       `json:"-"` // symbol_side -> AI decision parameters (SL/TP)
+	OpenOrders         map[string][]OpenOrder             `json:"-"` // symbol -> open orders (SL/TP)
 	CandidateCoins     []CandidateCoin                    `json:"candidate_coins"`
 	PromptVariant      string                             `json:"prompt_variant,omitempty"`
 	TradingStats       *TradingStats                      `json:"trading_stats,omitempty"`
@@ -309,6 +334,7 @@ func GetFullDecisionWithStrategy(ctx *Context, mcpClient mcp.AIClient, engine *S
 		riskConfig.BTCETHMaxPositionValueRatio,
 		riskConfig.AltcoinMaxPositionValueRatio,
 		riskConfig.MinPositionSize,
+		float64(riskConfig.MinConfidence),
 	)
 
 	if decision != nil {
@@ -1192,7 +1218,7 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 	sb.WriteString("- Contradictory signals are forbidden\n")
 	sb.WriteString("- Sideways or low-volatility markets are forbidden\n")
 	sb.WriteString("- Immediate re-entry after exit is forbidden\n")
-	sb.WriteString(fmt.Sprintf("- Confidence must be ≥ %d\n\n", riskControl.MinConfidence))
+	sb.WriteString(fmt.Sprintf("- Confidence must be ≥ %d for ALL decisions (open, close)\n\n", riskControl.MinConfidence))
 
 	sb.WriteString("## Available Indicators\n")
 	e.writeAvailableIndicators(&sb)
@@ -1222,14 +1248,15 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 		riskControl.BTCETHMaxLeverage,
 		examplePos,
 	))
-	sb.WriteString("  {\"symbol\":\"ETHUSDT\",\"action\":\"close_long\"}\n")
+	sb.WriteString("  {\"symbol\":\"ETHUSDT\",\"action\":\"close_long\",\"confidence\":80}\n")
 	sb.WriteString("]\n```\n")
 	sb.WriteString("</decision>\n\n")
 
 	sb.WriteString("# Field Requirements\n")
 	sb.WriteString("- action: open_long | open_short | close_long | close_short | hold | wait\n")
-	sb.WriteString(fmt.Sprintf("- confidence: 0–100 (open ≥ %d)\n", riskControl.MinConfidence))
+	sb.WriteString(fmt.Sprintf("- confidence: 0–100 (must be ≥ %d for ALL actions)\n", riskControl.MinConfidence))
 	sb.WriteString("- Opening requires: leverage, position_size_usd, stop_loss, take_profit, confidence, risk_usd\n")
+	sb.WriteString("- Closing requires: confidence\n")
 	sb.WriteString("- All numeric values MUST be explicit numbers (no formulas)\n\n")
 
 	// 9. Custom Strategy Overlay
@@ -1523,6 +1550,36 @@ func (e *StrategyEngine) formatPositionInfo(index int, pos PositionInfo, ctx *Co
 		index, pos.Symbol, strings.ToUpper(pos.Side),
 		pos.EntryPrice, pos.MarkPrice, pos.Quantity, positionValue, pos.UnrealizedPnLPct, pos.UnrealizedPnL, pos.PeakPnLPct,
 		pos.Leverage, pos.MarginUsed, pos.LiquidationPrice, holdingDuration))
+
+	// Show AI decision parameters (SL/TP) from DecisionAction records
+	// This provides complete SL/TP info, unlike OpenOrder which only has StopPrice
+	if ctx.PositionDecisions != nil && ctx.OpenOrders != nil {
+		// Look for matching orders for this position
+		if orders, exists := ctx.OpenOrders[pos.Symbol]; exists {
+			for _, order := range orders {
+				// Match order to position side
+				if order.PositionSide != pos.Side && order.PositionSide != "BOTH" && order.PositionSide != "" {
+					continue
+				}
+				// Use OrderID to find DecisionAction
+				posKey := order.OrderID
+				if dec, decExists := ctx.PositionDecisions[posKey]; decExists {
+					sb.WriteString("Risk Controls:\n")
+					if dec.StopLoss > 0 {
+						sb.WriteString(fmt.Sprintf("  🛑 Stop-Loss: %.4f\n", dec.StopLoss))
+					}
+					if dec.TakeProfit > 0 {
+						sb.WriteString(fmt.Sprintf("  🎯 Take-Profit: %.4f\n", dec.TakeProfit))
+					}
+					if dec.Confidence > 0 {
+						sb.WriteString(fmt.Sprintf("  Confidence: %d%%\n", dec.Confidence))
+					}
+					sb.WriteString("\n")
+					break // Found matching decision, stop looking
+				}
+			}
+		}
+	}
 
 	if marketData, ok := ctx.MarketDataMap[pos.Symbol]; ok {
 		sb.WriteString(e.formatMarketData(marketData))
@@ -1875,7 +1932,7 @@ func formatFloatSlice(values []float64) string {
 // AI Response Parsing
 // ============================================================================
 
-func parseFullDecisionResponse(aiResponse string, accountEquity float64, btcEthLeverage, altcoinLeverage int, btcEthPosRatio, altcoinPosRatio float64, minPositionSize float64) (*FullDecision, error) {
+func parseFullDecisionResponse(aiResponse string, accountEquity float64, btcEthLeverage, altcoinLeverage int, btcEthPosRatio, altcoinPosRatio float64, minPositionSize, minConfidence float64) (*FullDecision, error) {
 	cotTrace := extractCoTTrace(aiResponse)
 
 	decisions, err := extractDecisions(aiResponse)
@@ -1886,7 +1943,7 @@ func parseFullDecisionResponse(aiResponse string, accountEquity float64, btcEthL
 		}, fmt.Errorf("failed to extract decisions: %w", err)
 	}
 
-	if err := validateDecisions(decisions, accountEquity, btcEthLeverage, altcoinLeverage, btcEthPosRatio, altcoinPosRatio, minPositionSize); err != nil {
+	if err := validateDecisions(decisions, accountEquity, btcEthLeverage, altcoinLeverage, btcEthPosRatio, altcoinPosRatio, minPositionSize, minConfidence); err != nil {
 		return &FullDecision{
 			CoTTrace:  cotTrace,
 			Decisions: decisions,
@@ -2052,16 +2109,16 @@ func compactArrayOpen(s string) string {
 // Decision Validation
 // ============================================================================
 
-func validateDecisions(decisions []Decision, accountEquity float64, btcEthLeverage, altcoinLeverage int, btcEthPosRatio, altcoinPosRatio float64, minPositionSize float64) error {
+func validateDecisions(decisions []Decision, accountEquity float64, btcEthLeverage, altcoinLeverage int, btcEthPosRatio, altcoinPosRatio float64, minPositionSize, minConfidence float64) error {
 	for i := range decisions {
-		if err := validateDecision(&decisions[i], accountEquity, btcEthLeverage, altcoinLeverage, btcEthPosRatio, altcoinPosRatio, minPositionSize); err != nil {
+		if err := validateDecision(&decisions[i], accountEquity, btcEthLeverage, altcoinLeverage, btcEthPosRatio, altcoinPosRatio, minPositionSize, minConfidence); err != nil {
 			return fmt.Errorf("decision #%d validation failed: %w", i+1, err)
 		}
 	}
 	return nil
 }
 
-func validateDecision(d *Decision, accountEquity float64, btcEthLeverage, altcoinLeverage int, btcEthPosRatio, altcoinPosRatio float64, minPositionSize float64) error {
+func validateDecision(d *Decision, accountEquity float64, btcEthLeverage, altcoinLeverage int, btcEthPosRatio, altcoinPosRatio float64, minPositionSize, minConfidence float64) error {
 	validActions := map[string]bool{
 		"open_long":   true,
 		"open_short":  true,
@@ -2073,6 +2130,11 @@ func validateDecision(d *Decision, accountEquity float64, btcEthLeverage, altcoi
 
 	if !validActions[d.Action] {
 		return fmt.Errorf("invalid action: %s", d.Action)
+	}
+
+	// Validate confidence for ALL decisions (open, close)
+	if minConfidence > 0 && d.Confidence < int(minConfidence) {
+		return fmt.Errorf("confidence %d is below minimum %d", d.Confidence, int(minConfidence))
 	}
 
 	if d.Action == "open_long" || d.Action == "open_short" {
