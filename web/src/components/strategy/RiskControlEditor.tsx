@@ -36,7 +36,7 @@ export function RiskControlEditor({
       minRiskReward: { zh: '最小风险回报比', en: 'Min Risk/Reward Ratio' },
       minRiskRewardDesc: { zh: '开仓要求的最低盈亏比', en: 'Minimum profit ratio for opening' },
       maxMarginUsage: { zh: '最大保证金使用率（代码强制）', en: 'Max Margin Usage (CODE ENFORCED)' },
-      maxMarginUsageDesc: { zh: '保证金使用率上限，由代码强制执行', en: 'Maximum margin utilization, enforced by code' },
+      maxMarginUsageDesc: { zh: '保证金使用率上限，由代码强制执行，0 表示忽略', en: 'Maximum margin utilization, enforced by code (0 means ignore)' },
       entryRequirements: { zh: '开仓要求', en: 'Entry Requirements' },
       minPositionSize: { zh: '最小开仓金额', en: 'Min Position Size' },
       minPositionSizeDesc: { zh: 'USDT 最小名义价值', en: 'Minimum notional value in USDT' },
@@ -302,7 +302,7 @@ export function RiskControlEditor({
                   updateField('max_margin_usage', parseInt(e.target.value) / 100)
                 }
                 disabled={disabled}
-                min={10}
+                min={0}
                 max={100}
                 className="flex-1 accent-green-500"
               />
