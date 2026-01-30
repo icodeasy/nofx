@@ -869,66 +869,35 @@ func (at *AutoTrader) buildTradingContext() (*kernel.Context, error) {
 		CandidateCoins: candidateCoins,
 	}
 
-	// 7.5. Fetch open orders (stop-loss, take-profit) for all position symbols
-	openOrdersMap := make(map[string][]kernel.OpenOrder)
-	for _, pos := range positionInfos {
-		if openOrders, err := at.trader.GetOpenOrders(pos.Symbol); err == nil && len(openOrders) > 0 {
-			// Convert trader.OpenOrder to kernel.OpenOrder
-			var kernelOrders []kernel.OpenOrder
-			for _, order := range openOrders {
-				kernelOrders = append(kernelOrders, kernel.OpenOrder{
-					OrderID:      order.OrderID,
-					Symbol:       order.Symbol,
-					Side:         order.Side,
-					PositionSide: order.PositionSide,
-					Type:         order.Type,
-					Price:        order.Price,
-					StopPrice:    order.StopPrice,
-					Quantity:     order.Quantity,
-					Status:       order.Status,
+	// 8. Fetch AI decision actions for all current positions
+	if at.store != nil {
+		var allPositionDecisions []*kernel.PositionDecision
+
+		// For each position, get all decision actions for that symbol
+		for _, pos := range positionInfos {
+			decActions, err := at.store.Decision().GetDecisionActionsForSymbol(at.id, pos.Symbol)
+			if err != nil {
+				logger.Infof("⚠️ [%s] Failed to get decision actions for %s: %v", at.name, pos.Symbol, err)
+				continue
+			}
+
+			// Convert DecisionAction to PositionDecision (already sorted latest to oldest)
+			for _, dec := range decActions {
+				allPositionDecisions = append(allPositionDecisions, &kernel.PositionDecision{
+					Symbol:     dec.Symbol,
+					Side:       pos.Side, // Use position side
+					Action:     dec.Action,
+					StopLoss:   dec.StopLoss,
+					TakeProfit: dec.TakeProfit,
+					Confidence: dec.Confidence,
+					Timestamp:  dec.Timestamp,
 				})
 			}
-			openOrdersMap[pos.Symbol] = kernelOrders
 		}
-	}
-	ctx.OpenOrders = openOrdersMap
 
-	// 8. Fetch AI decision parameters (SL/TP) from DecisionAction records
-	// This provides complete SL/TP info, unlike OpenOrder which only has StopPrice
-	if at.store != nil {
-		positionDecisions := make(map[string]*kernel.PositionDecision)
-		// Use OpenOrders to get the OrderID, then query DecisionAction by OrderID
-		for _, orders := range ctx.OpenOrders {
-			for _, order := range orders {
-				// Parse OrderID from string to int64
-				var orderID int64
-				if _, err := fmt.Sscanf(order.OrderID, "%d", &orderID); err == nil && orderID > 0 {
-					// Query DecisionAction by OrderID
-					if decAction, err := at.store.Decision().GetRecentDecisionAction(at.id, orderID); err == nil && decAction != nil {
-						// Determine side from position side
-						posSide := strings.ToLower(order.PositionSide)
-						if posSide == "both" || posSide == "" {
-							posSide = strings.ToLower(order.Side)
-						}
-						// Convert LONG/SHORT to long/short
-						if posSide == "long" || posSide == "short" {
-							// Use OrderID as key for exact match
-							posKey := fmt.Sprintf("%d", orderID)
-							positionDecisions[posKey] = &kernel.PositionDecision{
-								Symbol:     order.Symbol,
-								Side:       posSide,
-								StopLoss:   decAction.StopLoss,
-								TakeProfit: decAction.TakeProfit,
-								Confidence: decAction.Confidence,
-							}
-						}
-					}
-				}
-			}
-		}
-		ctx.PositionDecisions = positionDecisions
-		if len(positionDecisions) > 0 {
-			logger.Infof("📊 [%s] Loaded AI decision parameters (SL/TP) for %d positions using OrderID", at.name, len(positionDecisions))
+		ctx.PositionDecisions = allPositionDecisions
+		if len(allPositionDecisions) > 0 {
+			logger.Infof("📊 [%s] Loaded %d decision actions for current positions", at.name, len(allPositionDecisions))
 		}
 	}
 

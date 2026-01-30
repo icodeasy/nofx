@@ -312,40 +312,40 @@ func (s *DecisionStore) GetLastCycleNumber(traderID string) (int, error) {
 	return *cycleNumber, nil
 }
 
-// GetRecentDecisionAction gets the most recent DecisionAction for a specific order ID
-// Used to retrieve AI decision parameters (stop_loss, take_profit) for displaying in context
-// Returns nil if no matching decision found
-func (s *DecisionStore) GetRecentDecisionAction(traderID string, orderID int64) (*DecisionAction, error) {
+// GetDecisionActionsForSymbol gets all decision actions for a specific symbol
+// Returns decisions sorted from latest to oldest (by timestamp)
+func (s *DecisionStore) GetDecisionActionsForSymbol(traderID string, symbol string) ([]DecisionAction, error) {
 	var dbRecords []*DecisionRecordDB
 
-	// Query latest decision records for this trader
+	// Query latest decision records for this trader and symbol
 	err := s.db.Where("trader_id = ?", traderID).
 		Order("timestamp DESC").
-		Limit(20).
+		Limit(100).
 		Find(&dbRecords).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to query decision records: %w", err)
 	}
 
 	if len(dbRecords) == 0 {
-		return nil, nil
+		return []DecisionAction{}, nil
 	}
 
-	// Parse decisions from records and find matching order ID
+	var allDecisions []DecisionAction
+
+	// Parse decisions from records and collect all matching symbols
 	for _, dbRec := range dbRecords {
 		var decisions []DecisionAction
 		if err := json.Unmarshal([]byte(dbRec.Decisions), &decisions); err != nil {
 			continue
 		}
 
-		// Find matching decision by OrderID
+		// Collect all decisions for this symbol
 		for _, dec := range decisions {
-			if dec.OrderID == orderID {
-				// Found matching decision - return copy
-				return &dec, nil
+			if dec.Symbol == symbol {
+				allDecisions = append(allDecisions, dec)
 			}
 		}
 	}
 
-	return nil, nil
+	return allDecisions, nil
 }

@@ -104,14 +104,16 @@ type RecentOrder struct {
 	HoldDuration string  `json:"hold_duration"` // Hold duration, e.g. "2h30m"
 }
 
-// PositionDecision stores the AI decision parameters (SL/TP) that opened or last modified a position
-// This provides complete SL/TP info, unlike OpenOrder which only has StopPrice
+// PositionDecision stores the AI decision action and parameters
+// This provides complete decision info including SL/TP, action, and timestamp
 type PositionDecision struct {
-	Symbol     string  `json:"symbol"`
-	Side       string  `json:"side"`        // long/short
-	StopLoss   float64 `json:"stop_loss"`   // Stop loss price from AI decision
-	TakeProfit float64 `json:"take_profit"` // Take profit price from AI decision
-	Confidence int     `json:"confidence"`  // AI confidence level
+	Symbol     string    `json:"symbol"`
+	Side       string    `json:"side"`        // long/short
+	Action     string    `json:"action"`      // open_long, open_short, close_long, close_short, etc.
+	StopLoss   float64   `json:"stop_loss"`   // Stop loss price from AI decision
+	TakeProfit float64   `json:"take_profit"` // Take profit price from AI decision
+	Confidence int       `json:"confidence"`  // AI confidence level
+	Timestamp  time.Time `json:"timestamp"`   // Decision timestamp
 }
 
 // OpenOrder represents a pending order on the exchange (SL/TP)
@@ -134,8 +136,7 @@ type Context struct {
 	CallCount          int                                `json:"call_count"`
 	Account            AccountInfo                        `json:"account"`
 	Positions          []PositionInfo                     `json:"positions"`
-	PositionDecisions  map[string]*PositionDecision       `json:"-"` // symbol_side -> AI decision parameters (SL/TP)
-	OpenOrders         map[string][]OpenOrder             `json:"-"` // symbol -> open orders (SL/TP)
+	PositionDecisions  []*PositionDecision                `json:"-"` // All decision actions (latest to oldest) for current positions
 	CandidateCoins     []CandidateCoin                    `json:"candidate_coins"`
 	PromptVariant      string                             `json:"prompt_variant,omitempty"`
 	TradingStats       *TradingStats                      `json:"trading_stats,omitempty"`
@@ -1551,33 +1552,56 @@ func (e *StrategyEngine) formatPositionInfo(index int, pos PositionInfo, ctx *Co
 		pos.EntryPrice, pos.MarkPrice, pos.Quantity, positionValue, pos.UnrealizedPnLPct, pos.UnrealizedPnL, pos.PeakPnLPct,
 		pos.Leverage, pos.MarginUsed, pos.LiquidationPrice, holdingDuration))
 
-	// Show AI decision parameters (SL/TP) from DecisionAction records
-	// This provides complete SL/TP info, unlike OpenOrder which only has StopPrice
-	if ctx.PositionDecisions != nil && ctx.OpenOrders != nil {
-		// Look for matching orders for this position
-		if orders, exists := ctx.OpenOrders[pos.Symbol]; exists {
-			for _, order := range orders {
-				// Match order to position side
-				if order.PositionSide != pos.Side && order.PositionSide != "BOTH" && order.PositionSide != "" {
-					continue
-				}
-				// Use OrderID to find DecisionAction
-				posKey := order.OrderID
-				if dec, decExists := ctx.PositionDecisions[posKey]; decExists {
-					sb.WriteString("Risk Controls:\n")
-					if dec.StopLoss > 0 {
-						sb.WriteString(fmt.Sprintf("  🛑 Stop-Loss: %.4f\n", dec.StopLoss))
-					}
-					if dec.TakeProfit > 0 {
-						sb.WriteString(fmt.Sprintf("  🎯 Take-Profit: %.4f\n", dec.TakeProfit))
-					}
-					if dec.Confidence > 0 {
-						sb.WriteString(fmt.Sprintf("  Confidence: %d%%\n", dec.Confidence))
-					}
+	// Show AI decisions for current position
+	// Filter decisions for this symbol and side, from latest to oldest
+	// Show all open_${side} decisions until we hit a close_${side} decision
+	if ctx.PositionDecisions != nil {
+		var decisionsForPosition []*PositionDecision
+
+		// Filter and collect relevant decisions
+		for _, dec := range ctx.PositionDecisions {
+			if dec.Symbol == pos.Symbol && dec.Side == pos.Side {
+				decisionsForPosition = append(decisionsForPosition, dec)
+			}
+		}
+
+		// Filter to only show open_${side} decisions until close_${side}
+		var activeDecisions []*PositionDecision
+		expectedOpenAction := "open_" + pos.Side
+		expectedCloseAction := "close_" + pos.Side
+
+		for _, dec := range decisionsForPosition {
+			if dec.Action == expectedCloseAction {
+				// Hit a close decision, stop here
+				break
+			}
+			if dec.Action == expectedOpenAction {
+				activeDecisions = append(activeDecisions, dec)
+			}
+		}
+
+		// Display decisions for current position
+		if len(activeDecisions) > 0 {
+			sb.WriteString("Decisions for current position:\n")
+			for i, dec := range activeDecisions {
+				if i > 0 {
 					sb.WriteString("\n")
-					break // Found matching decision, stop looking
+				}
+				sb.WriteString(fmt.Sprintf("  %s", dec.Action))
+				if dec.Timestamp.Year() > 2000 {
+					sb.WriteString(fmt.Sprintf(" | %s", dec.Timestamp.Format("2006-01-02 15:04 UTC")))
+				}
+				if dec.StopLoss > 0 {
+					sb.WriteString(fmt.Sprintf("\n    🛑 Stop-Loss: %.4f", dec.StopLoss))
+				}
+				if dec.TakeProfit > 0 {
+					sb.WriteString(fmt.Sprintf("\n    🎯 Take-Profit: %.4f", dec.TakeProfit))
+				}
+				if dec.Confidence > 0 {
+					sb.WriteString(fmt.Sprintf("\n    Confidence: %d%%", dec.Confidence))
 				}
 			}
+			sb.WriteString("\n\n")
 		}
 	}
 
