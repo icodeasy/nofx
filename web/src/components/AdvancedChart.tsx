@@ -325,7 +325,7 @@ export function AdvancedChart({
   const fetchOpenOrders = async (traderID: string, symbol: string): Promise<OpenOrder[]> => {
     try {
       console.log('[AdvancedChart] Fetching open orders for trader:', traderID, 'symbol:', symbol)
-      const result = await httpClient.get(`/api/open-orders?trader_id=${traderID}&symbol=${symbol}`)
+      const result = await httpClient.get(`/open-orders?trader_id=${traderID}&symbol=${symbol}`)
 
       console.log('[AdvancedChart] Open orders API response:', result)
 
