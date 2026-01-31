@@ -113,8 +113,10 @@ export function AdvancedChart({
   const indicatorSeriesRef = useRef<Map<string, ISeriesApi<any>>>(new Map())
   const seriesMarkersRef = useRef<any>(null) // Markers primitive for v5
   const currentMarkersDataRef = useRef<any[]>([]) // 存储当前的标记数据
-  const klineDataRef = useRef<Map<number, { volume: number; quoteVolume: number }>>(new Map()) // 存储 kline 额外数据
+  const klineDataRef = useRef<Kline[]>([]) // 存储完整的K线数据用于指标计算
+  const klineExtraDataRef = useRef<Map<number, { volume: number; quoteVolume: number }>>(new Map()) // 存储 kline 额外数据
   const priceLinesRef = useRef<any[]>([]) // 存储挂单价格线
+  const indicatorsRef = useRef<IndicatorConfig[]>([]) // 存储indicators的ref，用于在闭包中访问最新值
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -474,7 +476,7 @@ export function AdvancedChart({
       const candleData = data as any
 
       // 从存储的数据中获取 volume 和 quoteVolume
-      const klineExtra = klineDataRef.current.get(param.time as number) || { volume: 0, quoteVolume: 0 }
+      const klineExtra = klineExtraDataRef.current.get(param.time as number) || { volume: 0, quoteVolume: 0 }
 
       setTooltipData({
         time: param.time,
@@ -528,10 +530,13 @@ export function AdvancedChart({
         console.log('[AdvancedChart] Loaded', klineData.length, 'klines')
         candlestickSeriesRef.current.setData(klineData)
 
+        // 存储完整的K线数据供指标计算使用
+        klineDataRef.current = klineData
+
         // 存储 volume/quoteVolume 数据供 tooltip 使用
-        klineDataRef.current.clear()
+        klineExtraDataRef.current.clear()
         klineData.forEach((k: any) => {
-          klineDataRef.current.set(k.time, { volume: k.volume || 0, quoteVolume: k.quoteVolume || 0 })
+          klineExtraDataRef.current.set(k.time, { volume: k.volume || 0, quoteVolume: k.quoteVolume || 0 })
         })
 
         // 1.5 计算行情统计数据
@@ -582,7 +587,7 @@ export function AdvancedChart({
         }
 
         // 3. 添加指标
-        updateIndicators(klineData)
+        updateIndicators(klineData, indicatorsRef.current)
 
         // 4. 获取并显示订单标记
         if (traderID && candlestickSeriesRef.current) {
@@ -835,8 +840,22 @@ export function AdvancedChart({
     }
   }, [showOrderMarkers])
 
+  // 同步indicators到ref
+  useEffect(() => {
+    indicatorsRef.current = indicators
+  }, [indicators])
+
+  // 监听指标变化，当指标开关改变时更新图表
+  useEffect(() => {
+    if (!chartRef.current || !candlestickSeriesRef.current) return
+    if (klineDataRef.current.length === 0) return
+
+    console.log('[AdvancedChart] Indicators changed, updating chart...')
+    updateIndicators(klineDataRef.current, indicators)
+  }, [indicators])
+
   // 更新指标
-  const updateIndicators = (klineData: Kline[]) => {
+  const updateIndicators = (klineData: Kline[], currentIndicators: IndicatorConfig[]) => {
     if (!chartRef.current) return
 
     // 清除旧指标
@@ -846,7 +865,7 @@ export function AdvancedChart({
     indicatorSeriesRef.current.clear()
 
     // 添加启用的指标
-    indicators.forEach(indicator => {
+    currentIndicators.forEach(indicator => {
       if (!indicator.enabled || !chartRef.current) return
 
       if (indicator.id.startsWith('ma')) {
