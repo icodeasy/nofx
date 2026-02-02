@@ -329,7 +329,7 @@ func GetFullDecisionWithStrategy(ctx *Context, mcpClient mcp.AIClient, engine *S
 	// 5. Parse AI response
 	decision, err := parseFullDecisionResponse(
 		aiResponse,
-		ctx.Account.TotalEquity,
+		ctx,
 		riskConfig.BTCETHMaxLeverage,
 		riskConfig.AltcoinMaxLeverage,
 		riskConfig.BTCETHMaxPositionValueRatio,
@@ -1963,7 +1963,7 @@ func formatFloatSlice(values []float64) string {
 // AI Response Parsing
 // ============================================================================
 
-func parseFullDecisionResponse(aiResponse string, accountEquity float64, btcEthLeverage, altcoinLeverage int, btcEthPosRatio, altcoinPosRatio float64, minPositionSize, minConfidence, minRiskRewardRatio float64) (*FullDecision, error) {
+func parseFullDecisionResponse(aiResponse string, ctx *Context, btcEthLeverage, altcoinLeverage int, btcEthPosRatio, altcoinPosRatio float64, minPositionSize, minConfidence, minRiskRewardRatio float64) (*FullDecision, error) {
 	cotTrace := extractCoTTrace(aiResponse)
 
 	decisions, err := extractDecisions(aiResponse)
@@ -1974,7 +1974,7 @@ func parseFullDecisionResponse(aiResponse string, accountEquity float64, btcEthL
 		}, fmt.Errorf("failed to extract decisions: %w", err)
 	}
 
-	if err := validateDecisions(decisions, accountEquity, btcEthLeverage, altcoinLeverage, btcEthPosRatio, altcoinPosRatio, minPositionSize, minConfidence, minRiskRewardRatio); err != nil {
+	if err := validateDecisions(decisions, ctx, btcEthLeverage, altcoinLeverage, btcEthPosRatio, altcoinPosRatio, minPositionSize, minConfidence, minRiskRewardRatio); err != nil {
 		return &FullDecision{
 			CoTTrace:  cotTrace,
 			Decisions: decisions,
@@ -2140,16 +2140,16 @@ func compactArrayOpen(s string) string {
 // Decision Validation
 // ============================================================================
 
-func validateDecisions(decisions []Decision, accountEquity float64, btcEthLeverage, altcoinLeverage int, btcEthPosRatio, altcoinPosRatio float64, minPositionSize, minConfidence, minRiskRewardRatio float64) error {
+func validateDecisions(decisions []Decision, ctx *Context, btcEthLeverage, altcoinLeverage int, btcEthPosRatio, altcoinPosRatio float64, minPositionSize, minConfidence, minRiskRewardRatio float64) error {
 	for i := range decisions {
-		if err := validateDecision(&decisions[i], accountEquity, btcEthLeverage, altcoinLeverage, btcEthPosRatio, altcoinPosRatio, minPositionSize, minConfidence, minRiskRewardRatio); err != nil {
+		if err := validateDecision(&decisions[i], ctx, btcEthLeverage, altcoinLeverage, btcEthPosRatio, altcoinPosRatio, minPositionSize, minConfidence, minRiskRewardRatio); err != nil {
 			return fmt.Errorf("decision #%d validation failed: %w", i+1, err)
 		}
 	}
 	return nil
 }
 
-func validateDecision(d *Decision, accountEquity float64, btcEthLeverage, altcoinLeverage int, btcEthPosRatio, altcoinPosRatio float64, minPositionSize, minConfidence, minRiskRewardRatio float64) error {
+func validateDecision(d *Decision, ctx *Context, btcEthLeverage, altcoinLeverage int, btcEthPosRatio, altcoinPosRatio float64, minPositionSize, minConfidence, minRiskRewardRatio float64) error {
 	validActions := map[string]bool{
 		"open_long":   true,
 		"open_short":  true,
@@ -2169,6 +2169,7 @@ func validateDecision(d *Decision, accountEquity float64, btcEthLeverage, altcoi
 	}
 
 	if d.Action == "open_long" || d.Action == "open_short" {
+		accountEquity := ctx.Account.TotalEquity
 		maxLeverage := altcoinLeverage
 		posRatio := altcoinPosRatio
 		maxPositionValue := accountEquity * posRatio
@@ -2221,38 +2222,57 @@ func validateDecision(d *Decision, accountEquity float64, btcEthLeverage, altcoi
 			}
 		}
 
-		var entryPrice float64
-		if d.Action == "open_long" {
-			entryPrice = d.StopLoss + (d.TakeProfit-d.StopLoss)*0.2
+		// Validate risk/reward ratio using actual market price if available
+		actualEntryPrice := 0.0
+		if marketData, ok := ctx.MarketDataMap[d.Symbol]; ok && marketData.CurrentPrice > 0 {
+			actualEntryPrice = marketData.CurrentPrice
+		}
+		if err := ValidateRiskRewardRatio(d.Symbol, d.Action, actualEntryPrice, d.StopLoss, d.TakeProfit, minRiskRewardRatio); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// ValidateRiskRewardRatio checks if the risk/reward ratio meets the minimum requirement
+// action: "open_long" or "open_short"
+// actualEntryPrice: the real entry price from market (use 0 to estimate)
+// stopLoss, takeProfit: the SL and TP prices
+// minRiskRewardRatio: minimum required ratio
+func ValidateRiskRewardRatio(symbol, action string, actualEntryPrice, stopLoss, takeProfit, minRiskRewardRatio float64) error {
+	// If no actual entry price provided, estimate as 20% from SL toward TP
+	entryPrice := actualEntryPrice
+	if entryPrice <= 0 {
+		if action == "open_long" {
+			entryPrice = stopLoss + (takeProfit-stopLoss)*0.2
 		} else {
-			entryPrice = d.StopLoss - (d.StopLoss-d.TakeProfit)*0.2
+			entryPrice = stopLoss - (stopLoss-takeProfit)*0.2
 		}
+	}
 
-		var riskPercent, rewardPercent, riskRewardRatio float64
-		if d.Action == "open_long" {
-			riskPercent = (entryPrice - d.StopLoss) / entryPrice * 100
-			rewardPercent = (d.TakeProfit - entryPrice) / entryPrice * 100
-			if riskPercent > 0 {
-				riskRewardRatio = rewardPercent / riskPercent
-			}
-		} else {
-			riskPercent = (d.StopLoss - entryPrice) / entryPrice * 100
-			rewardPercent = (entryPrice - d.TakeProfit) / entryPrice * 100
-			if riskPercent > 0 {
-				riskRewardRatio = rewardPercent / riskPercent
-			}
+	var riskPercent, rewardPercent, riskRewardRatio float64
+	if action == "open_long" {
+		riskPercent = (entryPrice - stopLoss) / entryPrice * 100
+		rewardPercent = (takeProfit - entryPrice) / entryPrice * 100
+	} else {
+		riskPercent = (stopLoss - entryPrice) / entryPrice * 100
+		rewardPercent = (entryPrice - takeProfit) / entryPrice * 100
+	}
+
+	if riskPercent > 0 {
+		riskRewardRatio = rewardPercent / riskPercent
+	}
+
+	if riskRewardRatio < minRiskRewardRatio {
+		checkType := "Estimated"
+		if actualEntryPrice > 0 {
+			checkType = "Real-time"
 		}
-
-		// Log R/R calculation for debugging
-		logger.Infof("📊 [Risk/Reward Check] %s %s | Entry: %.4f | SL: %.4f | TP: %.4f | Risk: %.2f%% | Reward: %.2f%% | R/R: %.2f:1 | Min Required: %.2f:1",
-			d.Symbol, d.Action, entryPrice, d.StopLoss, d.TakeProfit, riskPercent, rewardPercent, riskRewardRatio, minRiskRewardRatio)
-
-		if riskRewardRatio < minRiskRewardRatio {
-			return fmt.Errorf("risk/reward ratio too low (%.2f:1), must be ≥%.1f:1 [risk: %.2f%% reward: %.2f%%] [stop loss: %.2f take profit: %.2f]",
-				riskRewardRatio, minRiskRewardRatio, riskPercent, rewardPercent, d.StopLoss, d.TakeProfit)
-		}
-
-		logger.Infof("✅ [Risk/Reward Passed] %s %s | R/R: %.2f:1 ≥ %.1f:1", d.Symbol, d.Action, riskRewardRatio, minRiskRewardRatio)
+		logger.Infof("📊 [%s R/R Check] %s %s | Entry: %.6f | SL: %.4f | TP: %.4f | Risk: %.2f%% | Reward: %.2f%% | R/R: %.2f:1 | Min Required: %.2f:1",
+			checkType, symbol, action, entryPrice, stopLoss, takeProfit, riskPercent, rewardPercent, riskRewardRatio, minRiskRewardRatio)
+		return fmt.Errorf("risk/reward ratio too low (%.2f:1), must be ≥%.1f:1 [risk: %.2f%% reward: %.2f%%]",
+			riskRewardRatio, minRiskRewardRatio, riskPercent, rewardPercent)
 	}
 
 	return nil
