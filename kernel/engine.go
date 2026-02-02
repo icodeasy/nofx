@@ -1194,7 +1194,7 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 
 	sb.WriteString("## AI Guidance (Must Follow)\n")
 	sb.WriteString(fmt.Sprintf("- Max leverage: Altcoins %dx | BTC/ETH %dx\n", riskControl.AltcoinMaxLeverage, riskControl.BTCETHMaxLeverage))
-	sb.WriteString(fmt.Sprintf("- Min risk-reward ratio: 1:%.1f\n", riskControl.MinRiskRewardRatio))
+	sb.WriteString(fmt.Sprintf("- Min risk-reward ratio for OPEN positions: 1:%.1f\n", riskControl.MinRiskRewardRatio))
 	sb.WriteString(fmt.Sprintf("- Min confidence to open: %d\n\n", riskControl.MinConfidence))
 
 	// 4. Position Sizing Rules
@@ -2244,11 +2244,7 @@ func ValidateRiskRewardRatio(symbol, action string, actualEntryPrice, stopLoss, 
 	// If no actual entry price provided, estimate as 20% from SL toward TP
 	entryPrice := actualEntryPrice
 	if entryPrice <= 0 {
-		if action == "open_long" {
-			entryPrice = stopLoss + (takeProfit-stopLoss)*0.2
-		} else {
-			entryPrice = stopLoss - (stopLoss-takeProfit)*0.2
-		}
+		return fmt.Errorf("entry price required for risk/reward validation")
 	}
 
 	var riskPercent, rewardPercent, riskRewardRatio float64
