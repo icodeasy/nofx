@@ -1192,10 +1192,21 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 		riskControl.MinPositionSize,
 	))
 
-	sb.WriteString("## AI Guidance (Must Follow)\n")
+	sb.WriteString("## AI Guidance (Must Follow)\n\n")
+
+	sb.WriteString("### Open Position Requirements\n")
 	sb.WriteString(fmt.Sprintf("- Max leverage: Altcoins %dx | BTC/ETH %dx\n", riskControl.AltcoinMaxLeverage, riskControl.BTCETHMaxLeverage))
-	sb.WriteString(fmt.Sprintf("- Min risk-reward ratio for OPEN positions: 1:%.1f\n", riskControl.MinRiskRewardRatio))
+	sb.WriteString(fmt.Sprintf("- Min risk-reward ratio: 1:%.1f\n", riskControl.MinRiskRewardRatio))
 	sb.WriteString(fmt.Sprintf("- Min confidence to open: %d\n\n", riskControl.MinConfidence))
+
+	sb.WriteString("### Close Position Requirements\n")
+	sb.WriteString(fmt.Sprintf("- Min confidence to close: %d\n", riskControl.MinConfidence))
+	sb.WriteString("- Close decisions should consider:\n")
+	sb.WriteString("  • Current PnL (profit/loss)\n")
+	sb.WriteString("  • Market conditions\n")
+	sb.WriteString("  • Exit signals\n")
+	sb.WriteString("  • Stop-loss/take-profit prices\n")
+	sb.WriteString("- IMPORTANT: Do NOT evaluate the original risk-reward ratio when closing\n")
 
 	// 4. Position Sizing Rules
 	sb.WriteString("## Position Sizing Rules\n")
@@ -1264,7 +1275,7 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 	sb.WriteString("- action: open_long | open_short | close_long | close_short | hold | wait\n")
 	sb.WriteString(fmt.Sprintf("- confidence: 0–100 (must be ≥ %d for ALL actions)\n", riskControl.MinConfidence))
 	sb.WriteString("- Opening requires: leverage, position_size_usd, stop_loss, take_profit, confidence, risk_usd\n")
-	sb.WriteString("- Closing requires: confidence\n")
+	sb.WriteString("- Closing requires: confidence (DO NOT re-evaluate R/R ratio)\n")
 	sb.WriteString("- All numeric values MUST be explicit numbers (no formulas)\n\n")
 
 	// 9. Custom Strategy Overlay
