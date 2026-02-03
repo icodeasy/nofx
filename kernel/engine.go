@@ -2233,10 +2233,10 @@ func validateDecision(d *Decision, ctx *Context, btcEthLeverage, altcoinLeverage
 			}
 		}
 
-		// Validate risk/reward ratio using actual market price if available
+		// Validate risk/reward ratio using fresh market data
 		actualEntryPrice := 0.0
-		if marketData, ok := ctx.MarketDataMap[d.Symbol]; ok && marketData.CurrentPrice > 0 {
-			actualEntryPrice = marketData.CurrentPrice
+		if freshData, err := market.Get(d.Symbol); err == nil && freshData.CurrentPrice > 0 {
+			actualEntryPrice = freshData.CurrentPrice
 		}
 		if err := ValidateRiskRewardRatio(d.Symbol, d.Action, actualEntryPrice, d.StopLoss, d.TakeProfit, minRiskRewardRatio); err != nil {
 			return err
