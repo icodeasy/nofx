@@ -1456,7 +1456,7 @@ func calculateExpectationBox(klines []Kline, ratio float64) (boxTop []float64, b
 	tops, bottoms := findTopsAndBottoms(klines, ratio)
 
 	// Need at least 3 tops and 3 bottoms for meaningful analysis
-	if len(tops) < 3 || len(bottoms) < 3 {
+	if len(tops) < 2 || len(bottoms) < 2 {
 		return nil, nil
 	}
 
