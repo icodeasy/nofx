@@ -1575,39 +1575,40 @@ func (e *StrategyEngine) formatPositionInfo(index int, pos PositionInfo, ctx *Co
 		pos.Leverage, pos.MarginUsed, pos.LiquidationPrice, holdingDuration))
 
 	// Show AI decisions for current position
-	// Filter decisions for this symbol and side, only show decisions AFTER position was opened
-	// This prevents showing decisions from previously closed positions for the same symbol/side
+	// Find the most recent open_${side} decision and show decisions from that point
+	// This handles the case where a position was closed and reopened
 	if ctx.PositionDecisions != nil {
-		var decisionsForPosition []*PositionDecision
-
-		// Get position open time (UpdateTime is set to EntryTime when position is created)
-		positionOpenTime := pos.UpdateTime
-
-		// Filter and collect relevant decisions
-		for _, dec := range ctx.PositionDecisions {
-			if dec.Symbol == pos.Symbol && dec.Side == pos.Side {
-				// Only include decisions made AFTER the position was opened
-				// dec.Timestamp is time.Time, convert to milliseconds for comparison
-				decTimeMs := dec.Timestamp.UnixMilli()
-				if decTimeMs >= positionOpenTime {
-					decisionsForPosition = append(decisionsForPosition, dec)
-				}
-			}
-		}
-
-		// Filter to only show open_${side} decisions until close_${side}
 		var activeDecisions []*PositionDecision
 		expectedOpenAction := "open_" + pos.Side
 		expectedCloseAction := "close_" + pos.Side
 
-		for _, dec := range decisionsForPosition {
-			if dec.Action == expectedCloseAction {
-				// Hit a close decision, stop here
-				break
+		// Decisions are sorted latest to oldest, iterate to find the current position's decisions
+		for _, dec := range ctx.PositionDecisions {
+			if dec.Symbol == pos.Symbol && dec.Side == pos.Side {
+				if dec.Action == expectedOpenAction {
+					// Found the most recent open action - this starts our current position
+					// Add this open decision and continue collecting until we see a close
+					activeDecisions = append(activeDecisions, dec)
+				} else if dec.Action == expectedCloseAction {
+					// Hit a close decision
+					if len(activeDecisions) > 0 {
+						// We've already collected decisions for current position, this close ends it
+						break
+					}
+					// No active decisions collected yet - this is the most recent decision
+					// It's a close for current position that hasn't executed yet
+					// Skip it and continue looking backward for an open action
+				} else if len(activeDecisions) > 0 {
+					// We're in the middle of collecting decisions for current position
+					// This might be another open_{side} (add to position) or other action
+					activeDecisions = append(activeDecisions, dec)
+				}
 			}
-			if dec.Action == expectedOpenAction {
-				activeDecisions = append(activeDecisions, dec)
-			}
+		}
+
+		// Reverse to show oldest to newest (chronological order)
+		for i, j := 0, len(activeDecisions)-1; i < j; i, j = i+1, j-1 {
+			activeDecisions[i], activeDecisions[j] = activeDecisions[j], activeDecisions[i]
 		}
 
 		// Display decisions for current position
