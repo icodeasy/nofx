@@ -316,7 +316,11 @@ func (e *DebateEngine) buildMarketContext(session *store.DebateSessionWithDetail
 		Timeframes:        timeframes,
 		PrimaryTimeframe:  primaryTimeframe,
 		DisplayCount:      klineCount,
-		BOXRatio:          1.03,
+		BOXRatio:          config.Indicators.BOXRatio,
+		EMAPeriods:       config.Indicators.EMAPeriods,
+		RSIPeriods:       config.Indicators.RSIPeriods,
+		ATRPeriods:       config.Indicators.ATRPeriods,
+		BOLLPeriods:       config.Indicators.BOLLPeriods,
 	}
 	for _, coin := range candidates {
 		data, err := market.GetWithTimeframes(coin.Symbol, fetchConfig)

@@ -34,20 +34,24 @@ type TimeframeFetchConfig struct {
 	PrimaryTimeframe string   // Primary timeframe for calculating current indicators
 	DisplayCount     int      // Number of klines to include in output for display (BOX uses all fetched data)
 	BOXRatio         float64  // Ratio for BOX top/bottom detection (must be > 1.0, e.g. 1.03 = 3%)
+
+	// Indicator period configurations (from strategy.IndicatorConfig)
+	EMAPeriods  []int // EMA periods, e.g. [20, 50]
+	RSIPeriods  []int // RSI periods, e.g. [7, 14]
+	ATRPeriods  []int // ATR periods, e.g. [14]
+	BOLLPeriods []int // BOLL periods, e.g. [20] (std dev multiplier is fixed at 2.0)
 }
 
 // IndicatorCalculationConfig defines configuration for calculating indicators on a single timeframe
 type IndicatorCalculationConfig struct {
 	DisplayCount int     // Number of data points to include in output (for display)
 	BOXRatio     float64 // Ratio for BOX top/bottom detection (must be > 1.0)
-	// Future extensibility - add new indicator configs here without changing function signature
-	// EnableEMA    bool
-	// EMAPeriods  []int
-	// EnableMACD   bool
-	// EnableRSI    bool
-	// RSIPeriods  []int
-	// EnableBOLL   bool
-	// BOLLPeriods []int
+
+	// Indicator period configurations (from strategy.IndicatorConfig)
+	EMAPeriods  []int // EMA periods, e.g. [20, 50]
+	RSIPeriods  []int // RSI periods, e.g. [7, 14]
+	ATRPeriods  []int // ATR periods, e.g. [14]
+	BOLLPeriods []int // BOLL periods, e.g. [20] (std dev multiplier is fixed at 2.0)
 }
 
 // Note: Kline data now uses free/open API (coinank_api.Kline) which doesn't require authentication
@@ -340,6 +344,10 @@ func GetWithTimeframes(symbol string, config TimeframeFetchConfig) (*Data, error
 		calcConfig := IndicatorCalculationConfig{
 			DisplayCount: config.DisplayCount,
 			BOXRatio:     boxRatio,
+			EMAPeriods:  config.EMAPeriods,
+			RSIPeriods:  config.RSIPeriods,
+			ATRPeriods:  config.ATRPeriods,
+			BOLLPeriods: config.BOLLPeriods,
 		}
 		seriesData := calculateTimeframeSeries(klines, tf, calcConfig)
 		timeframeData[tf] = seriesData
@@ -358,9 +366,22 @@ func GetWithTimeframes(symbol string, config TimeframeFetchConfig) (*Data, error
 
 	// Calculate current indicators (based on primary timeframe latest data)
 	currentPrice := primaryKlines[len(primaryKlines)-1].Close
-	currentEMA20 := calculateEMA(primaryKlines, 20)
+
+	// Use configured EMA period, default to 20
+	emaPeriod := 20
+	if len(config.EMAPeriods) > 0 {
+		emaPeriod = config.EMAPeriods[0]
+	}
+	currentEMA20 := calculateEMA(primaryKlines, emaPeriod)
+
 	currentMACD := calculateMACD(primaryKlines)
-	currentRSI7 := calculateRSI(primaryKlines, 7)
+
+	// Use configured RSI period, default to 7
+	rsiPeriod := 7
+	if len(config.RSIPeriods) > 0 {
+		rsiPeriod = config.RSIPeriods[0]
+	}
+	currentRSI7 := calculateRSI(primaryKlines, rsiPeriod)
 
 	// Calculate price changes
 	priceChange1h := calculatePriceChangeByBars(primaryKlines, primaryTimeframe, 60)  // 1 hour
@@ -400,6 +421,24 @@ func calculateTimeframeSeries(klines []Kline, timeframe string, config Indicator
 		config.BOXRatio = 1.03 // Default to 3% if invalid
 	}
 
+	// Set default indicator periods if not provided
+	emaPeriods := config.EMAPeriods
+	if len(emaPeriods) == 0 {
+		emaPeriods = []int{20, 50} // default
+	}
+	rsiPeriods := config.RSIPeriods
+	if len(rsiPeriods) == 0 {
+		rsiPeriods = []int{7, 14} // default
+	}
+	atrPeriods := config.ATRPeriods
+	if len(atrPeriods) == 0 {
+		atrPeriods = []int{14} // default
+	}
+	bollPeriods := config.BOLLPeriods
+	if len(bollPeriods) == 0 {
+		bollPeriods = []int{20} // default
+	}
+
 	data := &TimeframeSeriesData{
 		Timeframe:   timeframe,
 		Klines:      make([]KlineBar, 0, config.DisplayCount),
@@ -436,45 +475,62 @@ func calculateTimeframeSeries(klines []Kline, timeframe string, config Indicator
 		data.MidPrices = append(data.MidPrices, klines[i].Close)
 		data.Volume = append(data.Volume, klines[i].Volume)
 
-		// Calculate EMA20 for each point
-		if i >= 19 {
-			ema20 := calculateEMA(klines[:i+1], 20)
-			data.EMA20Values = append(data.EMA20Values, ema20)
+		// Calculate EMA for each configured period
+		// First period goes to EMA20Values, second to EMA50Values (for backward compatibility)
+		if len(emaPeriods) > 0 {
+			period1 := emaPeriods[0]
+			if i >= period1-1 {
+				ema := calculateEMA(klines[:i+1], period1)
+				data.EMA20Values = append(data.EMA20Values, ema)
+			}
+		}
+		if len(emaPeriods) > 1 {
+			period2 := emaPeriods[1]
+			if i >= period2-1 {
+				ema := calculateEMA(klines[:i+1], period2)
+				data.EMA50Values = append(data.EMA50Values, ema)
+			}
 		}
 
-		// Calculate EMA50 for each point
-		if i >= 49 {
-			ema50 := calculateEMA(klines[:i+1], 50)
-			data.EMA50Values = append(data.EMA50Values, ema50)
-		}
-
-		// Calculate MACD for each point
+		// Calculate MACD for each point (fixed parameters)
 		if i >= 25 {
 			macd := calculateMACD(klines[:i+1])
 			data.MACDValues = append(data.MACDValues, macd)
 		}
 
-		// Calculate RSI for each point
-		if i >= 7 {
-			rsi7 := calculateRSI(klines[:i+1], 7)
-			data.RSI7Values = append(data.RSI7Values, rsi7)
+		// Calculate RSI for each configured period
+		// First period goes to RSI7Values, second to RSI14Values (for backward compatibility)
+		if len(rsiPeriods) > 0 {
+			period1 := rsiPeriods[0]
+			if i >= period1-1 {
+				rsi := calculateRSI(klines[:i+1], period1)
+				data.RSI7Values = append(data.RSI7Values, rsi)
+			}
 		}
-		if i >= 14 {
-			rsi14 := calculateRSI(klines[:i+1], 14)
-			data.RSI14Values = append(data.RSI14Values, rsi14)
+		if len(rsiPeriods) > 1 {
+			period2 := rsiPeriods[1]
+			if i >= period2-1 {
+				rsi := calculateRSI(klines[:i+1], period2)
+				data.RSI14Values = append(data.RSI14Values, rsi)
+			}
 		}
 
-		// Calculate Bollinger Bands (period 20, std dev multiplier 2)
-		if i >= 19 {
-			upper, middle, lower := calculateBOLL(klines[:i+1], 20, 2.0)
-			data.BOLLUpper = append(data.BOLLUpper, upper)
-			data.BOLLMiddle = append(data.BOLLMiddle, middle)
-			data.BOLLLower = append(data.BOLLLower, lower)
+		// Calculate Bollinger Bands for first configured period (std dev multiplier fixed at 2.0)
+		if len(bollPeriods) > 0 {
+			period := bollPeriods[0]
+			if i >= period-1 {
+				upper, middle, lower := calculateBOLL(klines[:i+1], period, 2.0)
+				data.BOLLUpper = append(data.BOLLUpper, upper)
+				data.BOLLMiddle = append(data.BOLLMiddle, middle)
+				data.BOLLLower = append(data.BOLLLower, lower)
+			}
 		}
 	}
 
-	// Calculate ATR14
-	data.ATR14 = calculateATR(klines, 14)
+	// Calculate ATR for first configured period (stored in ATR14 field for backward compatibility)
+	if len(atrPeriods) > 0 {
+		data.ATR14 = calculateATR(klines, atrPeriods[0])
+	}
 
 	// Calculate Expectation Box (tops/bottoms based support/resistance)
 	// BOX uses ALL available klines, not just the display count

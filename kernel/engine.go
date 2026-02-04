@@ -551,6 +551,10 @@ func fetchMarketDataWithStrategy(ctx *Context, engine *StrategyEngine) error {
 		PrimaryTimeframe: primaryTimeframe,
 		DisplayCount:     klineCount,
 		BOXRatio:         config.Indicators.BOXRatio,
+		EMAPeriods:      config.Indicators.EMAPeriods,
+		RSIPeriods:      config.Indicators.RSIPeriods,
+		ATRPeriods:      config.Indicators.ATRPeriods,
+		BOLLPeriods:      config.Indicators.BOLLPeriods,
 	}
 
 	// Validate BOX ratio (default 1.03 if not set or invalid)

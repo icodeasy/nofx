@@ -486,7 +486,11 @@ func (s *Server) handleStrategyTestRun(c *gin.Context) {
 		Timeframes:        timeframes,
 		PrimaryTimeframe:  primaryTimeframe,
 		DisplayCount:      klineCount,
-		BOXRatio:          1.03,
+		BOXRatio:          req.Config.Indicators.BOXRatio,
+		EMAPeriods:       req.Config.Indicators.EMAPeriods,
+		RSIPeriods:       req.Config.Indicators.RSIPeriods,
+		ATRPeriods:       req.Config.Indicators.ATRPeriods,
+		BOLLPeriods:       req.Config.Indicators.BOLLPeriods,
 	}
 
 	// Get real market data (using multiple timeframes)
