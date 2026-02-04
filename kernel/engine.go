@@ -1222,19 +1222,7 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 	sb.WriteString("  - 70–84 → 50–80% of max limit\n")
 	sb.WriteString("  - 60–69 → 30–50% of max limit\n\n")
 
-	// 5. Trading Frequency Rules
-	if promptSections.TradingFrequency != "" {
-		sb.WriteString(promptSections.TradingFrequency)
-		sb.WriteString("\n\n")
-	} else {
-		sb.WriteString("# Trading Frequency Rules\n")
-		sb.WriteString("- Max trades per day: 4\n")
-		sb.WriteString("- Max trades per hour: 0.2\n")
-		sb.WriteString("- Min holding time per position: 30 minutes\n")
-		sb.WriteString("- Violations indicate overtrading\n\n")
-	}
-
-	// 6. Entry Standards
+	// 5. Entry Standards
 	sb.WriteString("# Entry Rules (Strict)\n")
 	sb.WriteString("- Multiple independent signals must align\n")
 	sb.WriteString("- Single-indicator decisions are forbidden\n")
