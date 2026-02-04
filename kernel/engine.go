@@ -1571,15 +1571,23 @@ func (e *StrategyEngine) formatPositionInfo(index int, pos PositionInfo, ctx *Co
 		pos.Leverage, pos.MarginUsed, pos.LiquidationPrice, holdingDuration))
 
 	// Show AI decisions for current position
-	// Filter decisions for this symbol and side, from latest to oldest
-	// Show all open_${side} decisions until we hit a close_${side} decision
+	// Filter decisions for this symbol and side, only show decisions AFTER position was opened
+	// This prevents showing decisions from previously closed positions for the same symbol/side
 	if ctx.PositionDecisions != nil {
 		var decisionsForPosition []*PositionDecision
+
+		// Get position open time (UpdateTime is set to EntryTime when position is created)
+		positionOpenTime := pos.UpdateTime
 
 		// Filter and collect relevant decisions
 		for _, dec := range ctx.PositionDecisions {
 			if dec.Symbol == pos.Symbol && dec.Side == pos.Side {
-				decisionsForPosition = append(decisionsForPosition, dec)
+				// Only include decisions made AFTER the position was opened
+				// dec.Timestamp is time.Time, convert to milliseconds for comparison
+				decTimeMs := dec.Timestamp.UnixMilli()
+				if decTimeMs >= positionOpenTime {
+					decisionsForPosition = append(decisionsForPosition, dec)
+				}
 			}
 		}
 
