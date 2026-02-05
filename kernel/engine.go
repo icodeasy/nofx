@@ -1180,8 +1180,8 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 	sb.WriteString("# Hard Constraints (ENFORCED)\n\n")
 	sb.WriteString("## Backend Validated (Cannot Be Bypassed)\n")
 	sb.WriteString(fmt.Sprintf("- Max concurrent positions: %d\n", riskControl.MaxPositions))
-	sb.WriteString(fmt.Sprintf("- Altcoin position value ≤ %.0f USDT (equity %.0f × %.1fx)\n", accountEquity*altRatio, accountEquity, altRatio))
-	sb.WriteString(fmt.Sprintf("- BTC/ETH position value ≤ %.0f USDT (equity %.0f × %.1fx)\n", accountEquity*btcEthRatio, accountEquity, btcEthRatio))
+	sb.WriteString(fmt.Sprintf("- Altcoin position value ≤ %.2f USDT (equity %.2f × %.1fx)\n", accountEquity*altRatio, accountEquity, altRatio))
+	sb.WriteString(fmt.Sprintf("- BTC/ETH position value ≤ %.2f USDT (equity %.2f × %.1fx)\n", accountEquity*btcEthRatio, accountEquity, btcEthRatio))
 
 	// Max margin usage constraint (can be muted by setting to 0)
 	if riskControl.MaxMarginUsage > 0 {
