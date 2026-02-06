@@ -670,13 +670,13 @@ export function IndicatorEditor({
           {/* Indicator Grid */}
           <div className="grid grid-cols-2 gap-2">
             {[
-              { key: 'enable_ema', label: 'ema', desc: 'emaDesc', color: '#F0B90B', periodKey: 'ema_periods', defaultPeriods: '20,50' },
+              { key: 'enable_ema', label: 'ema', desc: 'emaDesc', color: '#F0B90B', periodKey: 'ema_periods', defaultPeriods: '20,50', title: 'EMA periods - comma separated values (e.g., 20,50). Common values: 9,12,20,26,50,200' },
               { key: 'enable_macd', label: 'macd', desc: 'macdDesc', color: '#a855f7' },
-              { key: 'enable_rsi', label: 'rsi', desc: 'rsiDesc', color: '#F6465D', periodKey: 'rsi_periods', defaultPeriods: '7,14' },
-              { key: 'enable_atr', label: 'atr', desc: 'atrDesc', color: '#60a5fa', periodKey: 'atr_periods', defaultPeriods: '14' },
-              { key: 'enable_boll', label: 'boll', desc: 'bollDesc', color: '#ec4899', periodKey: 'boll_periods', defaultPeriods: '20' },
-              { key: 'enable_box', label: 'box', desc: 'boxDesc', color: '#14b8a6', ratioKey: 'box_ratio', defaultRatio: '1.03' },
-            ].map(({ key, label, desc, color, periodKey, defaultPeriods, ratioKey, defaultRatio }) => (
+              { key: 'enable_rsi', label: 'rsi', desc: 'rsiDesc', color: '#F6465D', periodKey: 'rsi_periods', defaultPeriods: '7,14', title: 'RSI periods - comma separated values (e.g., 7,14). Standard: 14. Oversold <30, Overbought >70' },
+              { key: 'enable_atr', label: 'atr', desc: 'atrDesc', color: '#60a5fa', periodKey: 'atr_periods', defaultPeriods: '14', title: 'ATR period - measures volatility. Higher values = more smoothing. Standard: 14' },
+              { key: 'enable_boll', label: 'boll', desc: 'bollDesc', color: '#ec4899', periodKey: 'boll_periods', defaultPeriods: '20', title: 'Bollinger Bands period - typically 20. Measures price volatility using standard deviations' },
+              { key: 'enable_box', label: 'box', desc: 'boxDesc', color: '#14b8a6', ratioKey: 'box_ratio', defaultRatio: '1.03', title: 'Top/bottom detection ratio (default 1.03 = 3%, must be > 1.0)' },
+            ].map(({ key, label, desc, color, periodKey, defaultPeriods, ratioKey, defaultRatio, title }) => (
               <div
                 key={key}
                 className="p-2.5 rounded-lg transition-all"
@@ -715,6 +715,7 @@ export function IndicatorEditor({
                     placeholder={defaultPeriods}
                     className="w-full px-2 py-1 rounded text-[10px] text-center"
                     style={{ background: '#1E2329', border: '1px solid #2B3139', color: '#EAECEF' }}
+                    title={title}
                   />
                 )}
                 {ratioKey && config[key as keyof IndicatorConfig] && (
@@ -733,7 +734,7 @@ export function IndicatorEditor({
                     placeholder={defaultRatio}
                     className="w-full px-2 py-1 rounded text-[10px] text-center"
                     style={{ background: '#1E2329', border: '1px solid #2B3139', color: '#EAECEF' }}
-                    title="Top/bottom detection ratio (default 1.03 = 3%, must be > 1.0)"
+                    title={title}
                   />
                 )}
               </div>
