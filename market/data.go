@@ -10,6 +10,7 @@ import (
 	"nofx/provider/coinank/coinank_api"
 	"nofx/provider/coinank/coinank_enum"
 	"nofx/provider/hyperliquid"
+	"nofx/types"
 	"strconv"
 	"strings"
 	"sync"
@@ -33,25 +34,61 @@ type TimeframeFetchConfig struct {
 	Timeframes       []string // List of timeframes to fetch, e.g. ["5m", "15m", "1h", "4h"]
 	PrimaryTimeframe string   // Primary timeframe for calculating current indicators
 	DisplayCount     int      // Number of klines to include in output for display (BOX uses all fetched data)
-	BOXRatio         float64  // Ratio for BOX top/bottom detection (must be > 1.0, e.g. 1.03 = 3%)
 
-	// Indicator period configurations (from strategy.IndicatorConfig)
-	EMAPeriods  []int // EMA periods, e.g. [20, 50]
-	RSIPeriods  []int // RSI periods, e.g. [7, 14]
-	ATRPeriods  []int // ATR periods, e.g. [14]
-	BOLLPeriods []int // BOLL periods, e.g. [20] (std dev multiplier is fixed at 2.0)
+	// Indicator parameter configurations (full ParamConfig objects)
+	EMA  *types.EMAParamConfig  // EMA configuration
+	RSI  *types.RSIParamConfig  // RSI configuration
+	MACD *types.MACDParamConfig // MACD configuration
+	ATR  *types.ATRParamConfig  // ATR configuration
+	BOLL *types.BOLLParamConfig // Bollinger Bands configuration
+	BOX  *types.BOXParamConfig  // Expectation Box configuration
 }
 
 // IndicatorCalculationConfig defines configuration for calculating indicators on a single timeframe
 type IndicatorCalculationConfig struct {
 	DisplayCount int     // Number of data points to include in output (for display)
-	BOXRatio     float64 // Ratio for BOX top/bottom detection (must be > 1.0)
 
-	// Indicator period configurations (from strategy.IndicatorConfig)
-	EMAPeriods  []int // EMA periods, e.g. [20, 50]
-	RSIPeriods  []int // RSI periods, e.g. [7, 14]
-	ATRPeriods  []int // ATR periods, e.g. [14]
-	BOLLPeriods []int // BOLL periods, e.g. [20] (std dev multiplier is fixed at 2.0)
+	// Indicator parameter configurations (full ParamConfig objects)
+	EMA  *types.EMAParamConfig  // EMA configuration
+	RSI  *types.RSIParamConfig  // RSI configuration
+	MACD *types.MACDParamConfig // MACD configuration
+	ATR  *types.ATRParamConfig  // ATR configuration
+	BOLL *types.BOLLParamConfig // Bollinger Bands configuration
+	BOX  *types.BOXParamConfig  // Expectation Box configuration
+}
+
+// ========== Conversion Functions (avoid circular dependency with store) ==========
+// These convert store types to market types - keep in sync with store.IndicatorConfig
+
+// NOTE: Since market package cannot import store, the caller must convert
+// Example in api/strategy.go:
+//   fetchConfig := market.TimeframeFetchConfig{
+//     EMA: &market.EMAParamConfig{Periods: emaConfig.Periods},
+//     ...
+//   }
+
+// NewTimeframeFetchConfig creates a TimeframeFetchConfig from ParamConfig objects
+// This helper is provided for convenience, but direct construction is also fine
+func NewTimeframeFetchConfig(
+	timeframes []string,
+	primaryTimeframe string,
+	displayCount int,
+	ema *types.EMAParamConfig,
+	rsi *types.RSIParamConfig,
+	atr *types.ATRParamConfig,
+	boll *types.BOLLParamConfig,
+	box *types.BOXParamConfig,
+) TimeframeFetchConfig {
+	return TimeframeFetchConfig{
+		Timeframes:       timeframes,
+		PrimaryTimeframe: primaryTimeframe,
+		DisplayCount:     displayCount,
+		EMA:              ema,
+		RSI:              rsi,
+		ATR:              atr,
+		BOLL:             boll,
+		BOX:              box,
+	}
 }
 
 // Note: Kline data now uses free/open API (coinank_api.Kline) which doesn't require authentication
@@ -296,12 +333,6 @@ func GetWithTimeframes(symbol string, config TimeframeFetchConfig) (*Data, error
 		config.Timeframes = timeframes
 	}
 
-	// Validate BOX ratio
-	boxRatio := config.BOXRatio
-	if boxRatio <= 1.0 {
-		boxRatio = 1.03 // Default to 3% if invalid
-	}
-
 	// Store data for all timeframes
 	timeframeData := make(map[string]*TimeframeSeriesData)
 	var primaryKlines []Kline
@@ -341,13 +372,15 @@ func GetWithTimeframes(symbol string, config TimeframeFetchConfig) (*Data, error
 		}
 
 		// Calculate series data for this timeframe (use display count from config)
+		// Pass through the ParamConfig objects
 		calcConfig := IndicatorCalculationConfig{
 			DisplayCount: config.DisplayCount,
-			BOXRatio:     boxRatio,
-			EMAPeriods:  config.EMAPeriods,
-			RSIPeriods:  config.RSIPeriods,
-			ATRPeriods:  config.ATRPeriods,
-			BOLLPeriods: config.BOLLPeriods,
+			EMA:          config.EMA,
+			RSI:          config.RSI,
+			MACD:         config.MACD,
+			ATR:          config.ATR,
+			BOLL:         config.BOLL,
+			BOX:          config.BOX,
 		}
 		seriesData := calculateTimeframeSeries(klines, tf, calcConfig)
 		timeframeData[tf] = seriesData
@@ -369,8 +402,8 @@ func GetWithTimeframes(symbol string, config TimeframeFetchConfig) (*Data, error
 
 	// Use configured EMA period, default to 20
 	emaPeriod := 20
-	if len(config.EMAPeriods) > 0 {
-		emaPeriod = config.EMAPeriods[0]
+	if config.EMA != nil && len(config.EMA.Periods) > 0 {
+		emaPeriod = config.EMA.Periods[0]
 	}
 	currentEMA20 := calculateEMA(primaryKlines, emaPeriod)
 
@@ -378,8 +411,8 @@ func GetWithTimeframes(symbol string, config TimeframeFetchConfig) (*Data, error
 
 	// Use configured RSI period, default to 7
 	rsiPeriod := 7
-	if len(config.RSIPeriods) > 0 {
-		rsiPeriod = config.RSIPeriods[0]
+	if config.RSI != nil && len(config.RSI.Periods) > 0 {
+		rsiPeriod = config.RSI.Periods[0]
 	}
 	currentRSI7 := calculateRSI(primaryKlines, rsiPeriod)
 
@@ -417,26 +450,36 @@ func calculateTimeframeSeries(klines []Kline, timeframe string, config Indicator
 	if config.DisplayCount <= 0 {
 		config.DisplayCount = 10 // default
 	}
-	if config.BOXRatio <= 1.0 {
-		config.BOXRatio = 1.03 // Default to 3% if invalid
+
+	// Extract periods from ParamConfig objects with defaults
+	emaPeriods := []int{20, 50} // default
+	if config.EMA != nil && len(config.EMA.Periods) > 0 {
+		emaPeriods = config.EMA.Periods
 	}
 
-	// Set default indicator periods if not provided
-	emaPeriods := config.EMAPeriods
-	if len(emaPeriods) == 0 {
-		emaPeriods = []int{20, 50} // default
+	rsiPeriods := []int{7, 14} // default
+	if config.RSI != nil && len(config.RSI.Periods) > 0 {
+		rsiPeriods = config.RSI.Periods
 	}
-	rsiPeriods := config.RSIPeriods
-	if len(rsiPeriods) == 0 {
-		rsiPeriods = []int{7, 14} // default
+
+	atrPeriods := []int{14} // default
+	if config.ATR != nil && len(config.ATR.Periods) > 0 {
+		atrPeriods = config.ATR.Periods
 	}
-	atrPeriods := config.ATRPeriods
-	if len(atrPeriods) == 0 {
-		atrPeriods = []int{14} // default
+
+	bollPeriods := []int{20} // default
+	if config.BOLL != nil && len(config.BOLL.Periods) > 0 {
+		bollPeriods = config.BOLL.Periods
 	}
-	bollPeriods := config.BOLLPeriods
-	if len(bollPeriods) == 0 {
-		bollPeriods = []int{20} // default
+
+	bollStdDev := 2.0 // default
+	if config.BOLL != nil && config.BOLL.StdDevMultiplier > 0 {
+		bollStdDev = config.BOLL.StdDevMultiplier
+	}
+
+	boxRatio := 1.03 // default
+	if config.BOX != nil && config.BOX.Ratio > 1.0 {
+		boxRatio = config.BOX.Ratio
 	}
 
 	data := &TimeframeSeriesData{
@@ -515,11 +558,11 @@ func calculateTimeframeSeries(klines []Kline, timeframe string, config Indicator
 			}
 		}
 
-		// Calculate Bollinger Bands for first configured period (std dev multiplier fixed at 2.0)
+		// Calculate Bollinger Bands for first configured period
 		if len(bollPeriods) > 0 {
 			period := bollPeriods[0]
 			if i >= period-1 {
-				upper, middle, lower := calculateBOLL(klines[:i+1], period, 2.0)
+				upper, middle, lower := calculateBOLL(klines[:i+1], period, bollStdDev)
 				data.BOLLUpper = append(data.BOLLUpper, upper)
 				data.BOLLMiddle = append(data.BOLLMiddle, middle)
 				data.BOLLLower = append(data.BOLLLower, lower)
@@ -536,7 +579,7 @@ func calculateTimeframeSeries(klines []Kline, timeframe string, config Indicator
 	// BOX uses ALL available klines, not just the display count
 	// This ensures we have enough data to detect meaningful tops/bottoms (need at least 3 tops and 3 bottoms)
 	// ratio must be > 1, where 1.03 = 3% price movement required to confirm a top/bottom
-	boxTop, boxBottom := calculateExpectationBox(klines, config.BOXRatio)
+	boxTop, boxBottom := calculateExpectationBox(klines, boxRatio, 0) // 0 = unlimited lookback
 	if len(boxTop) == 2 && len(boxBottom) == 2 {
 		data.BOXTop = boxTop
 		data.BOXBottom = boxBottom
@@ -1507,9 +1550,17 @@ func findTopsAndBottoms(klines []Kline, ratio float64) ([]TopBottom, []TopBottom
 // Returns BOXTop and BOXBottom arrays where:
 //   - Index 0 = second-to-last top/bottom (for stop-loss)
 //   - Index 1 = last top/bottom (for current support/resistance)
-func calculateExpectationBox(klines []Kline, ratio float64) (boxTop []float64, boxBottom []float64) {
+// ratio: Price movement ratio to confirm top/bottom (e.g. 1.03 = 3%)
+// lookback: Max number of periods to search (0 = unlimited, uses all klines)
+func calculateExpectationBox(klines []Kline, ratio float64, lookback int) (boxTop []float64, boxBottom []float64) {
+	// Apply lookback limit if specified (0 = unlimited)
+	searchKlines := klines
+	if lookback > 0 && len(klines) > lookback {
+		searchKlines = klines[len(klines)-lookback:]
+	}
+
 	// Find tops and bottoms
-	tops, bottoms := findTopsAndBottoms(klines, ratio)
+	tops, bottoms := findTopsAndBottoms(searchKlines, ratio)
 
 	// Need at least 3 tops and 3 bottoms for meaningful analysis
 	if len(tops) < 2 || len(bottoms) < 2 {
@@ -1564,6 +1615,7 @@ func calculateExpectationBox(klines []Kline, ratio float64) (boxTop []float64, b
 }
 
 // ExportCalculateExpectationBox exports calculateExpectationBox for testing
-func ExportCalculateExpectationBox(klines []Kline, ratio float64) ([]float64, []float64) {
-	return calculateExpectationBox(klines, ratio)
+// lookback: Max number of periods to search (0 = unlimited, uses all klines)
+func ExportCalculateExpectationBox(klines []Kline, ratio float64, lookback int) ([]float64, []float64) {
+	return calculateExpectationBox(klines, ratio, lookback)
 }

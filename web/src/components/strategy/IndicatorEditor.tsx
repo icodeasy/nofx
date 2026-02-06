@@ -670,13 +670,13 @@ export function IndicatorEditor({
           {/* Indicator Grid */}
           <div className="grid grid-cols-2 gap-2">
             {[
-              { key: 'enable_ema', label: 'ema', desc: 'emaDesc', color: '#F0B90B', periodKey: 'ema_periods', defaultPeriods: '20,50', title: 'EMA periods - comma separated values (e.g., 20,50). Common values: 9,12,20,26,50,200' },
+              { key: 'enable_ema', label: 'ema', desc: 'emaDesc', color: '#F0B90B', paramKey: 'ema', defaultPeriods: '20,50', title: 'EMA periods - comma separated values (e.g., 20,50). Common values: 9,12,20,26,50,200' },
               { key: 'enable_macd', label: 'macd', desc: 'macdDesc', color: '#a855f7' },
-              { key: 'enable_rsi', label: 'rsi', desc: 'rsiDesc', color: '#F6465D', periodKey: 'rsi_periods', defaultPeriods: '7,14', title: 'RSI periods - comma separated values (e.g., 7,14). Standard: 14. Oversold <30, Overbought >70' },
-              { key: 'enable_atr', label: 'atr', desc: 'atrDesc', color: '#60a5fa', periodKey: 'atr_periods', defaultPeriods: '14', title: 'ATR period - measures volatility. Higher values = more smoothing. Standard: 14' },
-              { key: 'enable_boll', label: 'boll', desc: 'bollDesc', color: '#ec4899', periodKey: 'boll_periods', defaultPeriods: '20', title: 'Bollinger Bands period - typically 20. Measures price volatility using standard deviations' },
-              { key: 'enable_box', label: 'box', desc: 'boxDesc', color: '#14b8a6', ratioKey: 'box_ratio', defaultRatio: '1.03', title: 'Top/bottom detection ratio (default 1.03 = 3%, must be > 1.0)' },
-            ].map(({ key, label, desc, color, periodKey, defaultPeriods, ratioKey, defaultRatio, title }) => (
+              { key: 'enable_rsi', label: 'rsi', desc: 'rsiDesc', color: '#F6465D', paramKey: 'rsi', defaultPeriods: '7,14', title: 'RSI periods - comma separated values (e.g., 7,14). Standard: 14. Oversold <30, Overbought >70' },
+              { key: 'enable_atr', label: 'atr', desc: 'atrDesc', color: '#60a5fa', paramKey: 'atr', defaultPeriods: '14', title: 'ATR period - measures volatility. Higher values = more smoothing. Standard: 14' },
+              { key: 'enable_boll', label: 'boll', desc: 'bollDesc', color: '#ec4899', paramKey: 'boll', defaultPeriods: '20', title: 'Bollinger Bands period - typically 20. Measures price volatility using standard deviations' },
+              { key: 'enable_box', label: 'box', desc: 'boxDesc', color: '#14b8a6', paramKey: 'box', defaultRatio: '1.03', title: 'Top/bottom detection ratio (default 1.03 = 3%, must be > 1.0)' },
+            ].map(({ key, label, desc, color, paramKey, defaultPeriods, defaultRatio, title }) => (
               <div
                 key={key}
                 className="p-2.5 rounded-lg transition-all"
@@ -699,17 +699,17 @@ export function IndicatorEditor({
                   />
                 </div>
                 <p className="text-[10px] mb-1.5" style={{ color: '#5E6673' }}>{t(desc)}</p>
-                {periodKey && config[key as keyof IndicatorConfig] && (
+                {paramKey && defaultPeriods && config[key as keyof IndicatorConfig] && (
                   <input
                     type="text"
-                    value={(config[periodKey as keyof IndicatorConfig] as number[])?.join(',') || defaultPeriods}
+                    value={(config[paramKey as keyof IndicatorConfig] as { periods?: number[] })?.periods?.join(',') || defaultPeriods}
                     onChange={(e) => {
                       if (disabled) return
                       const periods = e.target.value
                         .split(',')
                         .map((s) => parseInt(s.trim()))
                         .filter((n) => !isNaN(n) && n > 0)
-                      onChange({ ...config, [periodKey]: periods })
+                      onChange({ ...config, [paramKey]: { periods } })
                     }}
                     disabled={disabled}
                     placeholder={defaultPeriods}
@@ -718,17 +718,17 @@ export function IndicatorEditor({
                     title={title}
                   />
                 )}
-                {ratioKey && config[key as keyof IndicatorConfig] && (
+                {paramKey && defaultRatio && config[key as keyof IndicatorConfig] && (
                   <input
                     type="number"
                     step="0.01"
                     min="1.01"
                     max="2.0"
-                    value={(config[ratioKey as keyof IndicatorConfig] as number)?.toString() || defaultRatio}
+                    value={(config[paramKey as keyof IndicatorConfig] as { ratio?: number })?.ratio?.toString() || defaultRatio}
                     onChange={(e) => {
                       if (disabled) return
                       const ratio = parseFloat(e.target.value.trim())
-                      onChange({ ...config, [ratioKey]: isNaN(ratio) || ratio < 1.01 ? 1.03 : ratio })
+                      onChange({ ...config, [paramKey]: { ratio: isNaN(ratio) || ratio < 1.01 ? 1.03 : ratio } })
                     }}
                     disabled={disabled}
                     placeholder={defaultRatio}

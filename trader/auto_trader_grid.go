@@ -8,6 +8,7 @@ import (
 	"nofx/logger"
 	"nofx/market"
 	"nofx/store"
+	"nofx/types"
 	"sync"
 	"time"
 )
@@ -462,10 +463,10 @@ func (at *AutoTrader) InitializeGrid() error {
 	if gridConfig.UseATRBounds {
 		// Get ATR for bound calculation
 		config := market.TimeframeFetchConfig{
-			Timeframes:        []string{"4h"},
-			PrimaryTimeframe:  "4h",
-			DisplayCount:      20,
-			BOXRatio:          1.03,
+			Timeframes:       []string{"4h"},
+			PrimaryTimeframe: "4h",
+			DisplayCount:     20,
+			BOX:              &types.BOXParamConfig{Ratio: 1.03},
 		}
 		mktData, err := market.GetWithTimeframes(gridConfig.Symbol, config)
 		if err != nil {
@@ -696,10 +697,10 @@ func (at *AutoTrader) buildGridContext() (*kernel.GridContext, error) {
 
 	// Get market data
 	config := market.TimeframeFetchConfig{
-		Timeframes:        []string{"5m", "4h"},
-		PrimaryTimeframe:  "5m",
-		DisplayCount:      50,
-		BOXRatio:          1.03,
+		Timeframes:       []string{"5m", "4h"},
+		PrimaryTimeframe: "5m",
+		DisplayCount:     50,
+		BOX:              &types.BOXParamConfig{Ratio: 1.03},
 	}
 	mktData, err := market.GetWithTimeframes(gridConfig.Symbol, config)
 	if err != nil {
@@ -1262,10 +1263,10 @@ func (at *AutoTrader) autoAdjustGrid() {
 	if gridConfig.UseATRBounds {
 		// Try to get ATR for bound calculation
 		config := market.TimeframeFetchConfig{
-			Timeframes:        []string{"4h"},
-			PrimaryTimeframe:  "4h",
-			DisplayCount:      20,
-			BOXRatio:          1.03,
+			Timeframes:       []string{"4h"},
+			PrimaryTimeframe: "4h",
+			DisplayCount:     20,
+			BOX:              &types.BOXParamConfig{Ratio: 1.03},
 		}
 		mktData, err := market.GetWithTimeframes(gridConfig.Symbol, config)
 		if err != nil {

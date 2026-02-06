@@ -663,7 +663,7 @@ func TestCalculateExpectationBox_EdgeCases(t *testing.T) {
 				}
 			}()
 
-			boxTop, boxBottom := ExportCalculateExpectationBox(klines, 1.03)
+			boxTop, boxBottom := ExportCalculateExpectationBox(klines, 1.03, 0) // 0 = unlimited lookback
 
 			// If we got here without panicking, the fix worked!
 			t.Logf("SUCCESS: %s did not panic. Results: boxTop=%v, boxBottom=%v",

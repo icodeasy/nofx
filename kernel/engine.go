@@ -545,21 +545,17 @@ func fetchMarketDataWithStrategy(ctx *Context, engine *StrategyEngine) error {
 
 	logger.Infof("📊 Strategy timeframes: %v, Primary: %s, Kline count: %d", timeframes, primaryTimeframe, klineCount)
 
-	// Build timeframe fetch config
+	// Build timeframe fetch config from ParamConfig objects
+	// Both store and market now use shared types.*ParamConfig, so no conversion needed
 	fetchConfig := market.TimeframeFetchConfig{
 		Timeframes:       timeframes,
 		PrimaryTimeframe: primaryTimeframe,
 		DisplayCount:     klineCount,
-		BOXRatio:         config.Indicators.BOXRatio,
-		EMAPeriods:      config.Indicators.EMAPeriods,
-		RSIPeriods:      config.Indicators.RSIPeriods,
-		ATRPeriods:      config.Indicators.ATRPeriods,
-		BOLLPeriods:      config.Indicators.BOLLPeriods,
-	}
-
-	// Validate BOX ratio (default 1.03 if not set or invalid)
-	if fetchConfig.BOXRatio <= 1.0 {
-		fetchConfig.BOXRatio = 1.03
+		EMA:              config.Indicators.GetEMAParamConfig(),
+		RSI:              config.Indicators.GetRSIParamConfig(),
+		ATR:              config.Indicators.GetATRParamConfig(),
+		BOLL:             config.Indicators.GetBOLLParamConfig(),
+		BOX:              config.Indicators.GetBOXParamConfig(),
 	}
 
 	// 1. First fetch data for position coins (must fetch)

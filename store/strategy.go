@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"nofx/types"
+
 	"gorm.io/gorm"
 )
 
@@ -132,6 +134,18 @@ type IndicatorConfig struct {
 	EnableVolume     bool `json:"enable_volume"`
 	EnableOI         bool `json:"enable_oi"`           // open interest
 	EnableFundingRate bool `json:"enable_funding_rate"` // funding rate
+
+	// ========== NEW: Structured Indicator Parameter Configurations ==========
+	// These are the preferred way to configure indicators (self-documenting, extensible)
+	EMA  *types.EMAParamConfig  `json:"ema,omitempty"`
+	RSI  *types.RSIParamConfig  `json:"rsi,omitempty"`
+	MACD *types.MACDParamConfig `json:"macd,omitempty"`
+	ATR  *types.ATRParamConfig  `json:"atr,omitempty"`
+	BOLL *types.BOLLParamConfig `json:"boll,omitempty"`
+	BOX  *types.BOXParamConfig  `json:"box,omitempty"`
+
+	// ========== DEPRECATED: Old-style period configurations ==========
+	// Kept for backward compatibility. Will be migrated to new format automatically.
 	// EMA period configuration
 	EMAPeriods []int `json:"ema_periods,omitempty"` // default [20, 50]
 	// RSI period configuration
@@ -142,6 +156,7 @@ type IndicatorConfig struct {
 	BOLLPeriods []int `json:"boll_periods,omitempty"` // default [20] - can select multiple timeframes
 	// BOX period configuration (tops/bottoms ratio)
 	BOXRatio float64 `json:"box_ratio,omitempty"` // default 1.03 (3%) - price movement ratio to confirm top/bottom (> 1.0)
+
 	// external data sources
 	ExternalDataSources []ExternalDataSource `json:"external_data_sources,omitempty"`
 
@@ -491,4 +506,173 @@ func (s *Strategy) SetConfig(config *StrategyConfig) error {
 	}
 	s.Config = string(data)
 	return nil
+}
+
+// ========== Migration Helper Functions ==========
+
+// MigrateIndicatorConfig migrates old-style indicator config to new structured format
+// This ensures backward compatibility while enabling new structured features
+func (ic *IndicatorConfig) MigrateIndicatorConfig() {
+	// Migrate EMA: just wrap []int in struct
+	if ic.EMA == nil && len(ic.EMAPeriods) > 0 {
+		ic.EMA = &types.EMAParamConfig{Periods: ic.EMAPeriods}
+		ic.EMAPeriods = nil // Clear old format after migration
+	}
+
+	// Migrate RSI
+	if ic.RSI == nil && len(ic.RSIPeriods) > 0 {
+		ic.RSI = &types.RSIParamConfig{Periods: ic.RSIPeriods}
+		ic.RSIPeriods = nil
+	}
+
+	// Migrate ATR
+	if ic.ATR == nil && len(ic.ATRPeriods) > 0 {
+		ic.ATR = &types.ATRParamConfig{Periods: ic.ATRPeriods}
+		ic.ATRPeriods = nil
+	}
+
+	// Migrate BOLL
+	if ic.BOLL == nil && len(ic.BOLLPeriods) > 0 {
+		ic.BOLL = &types.BOLLParamConfig{
+			Periods:           ic.BOLLPeriods,
+			StdDevMultiplier:  2.0, // Default
+		}
+		ic.BOLLPeriods = nil
+	}
+
+	// Migrate BOX
+	if ic.BOX == nil && ic.BOXRatio > 0 {
+		ic.BOX = &types.BOXParamConfig{
+			Ratio: ic.BOXRatio,
+		}
+		ic.BOXRatio = 0 // Clear old format
+	}
+
+	// Initialize MACD with defaults if enabled (no old format to migrate from)
+	if ic.MACD == nil && ic.EnableMACD {
+		ic.MACD = &types.MACDParamConfig{
+			FastPeriod:   12,
+			SlowPeriod:   26,
+			SignalPeriod: 9,
+		}
+	}
+}
+
+// GetEMAPeriods returns EMA periods from new or old format (with migration)
+func (ic *IndicatorConfig) GetEMAPeriods() []int {
+	ic.MigrateIndicatorConfig()
+	if ic.EMA != nil && len(ic.EMA.Periods) > 0 {
+		return ic.EMA.Periods
+	}
+	return []int{20, 50} // Default
+}
+
+// GetEMAParamConfig returns the full EMA parameter config (with migration)
+func (ic *IndicatorConfig) GetEMAParamConfig() *types.EMAParamConfig {
+	ic.MigrateIndicatorConfig()
+	if ic.EMA != nil {
+		return ic.EMA
+	}
+	return &types.EMAParamConfig{Periods: []int{20, 50}} // Default
+}
+
+// GetRSIPeriods returns RSI periods from new or old format (with migration)
+func (ic *IndicatorConfig) GetRSIPeriods() []int {
+	ic.MigrateIndicatorConfig()
+	if ic.RSI != nil && len(ic.RSI.Periods) > 0 {
+		return ic.RSI.Periods
+	}
+	return []int{7, 14} // Default
+}
+
+// GetRSIParamConfig returns the full RSI parameter config (with migration)
+func (ic *IndicatorConfig) GetRSIParamConfig() *types.RSIParamConfig {
+	ic.MigrateIndicatorConfig()
+	if ic.RSI != nil {
+		return ic.RSI
+	}
+	return &types.RSIParamConfig{Periods: []int{7, 14}} // Default
+}
+
+// GetATRPeriods returns ATR periods from new or old format (with migration)
+func (ic *IndicatorConfig) GetATRPeriods() []int {
+	ic.MigrateIndicatorConfig()
+	if ic.ATR != nil && len(ic.ATR.Periods) > 0 {
+		return ic.ATR.Periods
+	}
+	return []int{14} // Default
+}
+
+// GetATRParamConfig returns the full ATR parameter config (with migration)
+func (ic *IndicatorConfig) GetATRParamConfig() *types.ATRParamConfig {
+	ic.MigrateIndicatorConfig()
+	if ic.ATR != nil {
+		return ic.ATR
+	}
+	return &types.ATRParamConfig{Periods: []int{14}} // Default
+}
+
+// GetBOLLPeriods returns BOLL periods from new or old format (with migration)
+func (ic *IndicatorConfig) GetBOLLPeriods() []int {
+	ic.MigrateIndicatorConfig()
+	if ic.BOLL != nil && len(ic.BOLL.Periods) > 0 {
+		return ic.BOLL.Periods
+	}
+	return []int{20} // Default
+}
+
+// GetBOLLParamConfig returns the full BOLL parameter config (with migration)
+func (ic *IndicatorConfig) GetBOLLParamConfig() *types.BOLLParamConfig {
+	ic.MigrateIndicatorConfig()
+	if ic.BOLL != nil {
+		return ic.BOLL
+	}
+	return &types.BOLLParamConfig{Periods: []int{20}, StdDevMultiplier: 2.0} // Default
+}
+
+// GetBOLLStdDevMultiplier returns the BOLL std dev multiplier
+func (ic *IndicatorConfig) GetBOLLStdDevMultiplier() float64 {
+	ic.MigrateIndicatorConfig()
+	if ic.BOLL != nil && ic.BOLL.StdDevMultiplier > 0 {
+		return ic.BOLL.StdDevMultiplier
+	}
+	return 2.0 // Default
+}
+
+// GetBOXRatio returns BOX ratio from new or old format (with migration)
+func (ic *IndicatorConfig) GetBOXRatio() float64 {
+	ic.MigrateIndicatorConfig()
+	if ic.BOX != nil && ic.BOX.Ratio > 0 {
+		return ic.BOX.Ratio
+	}
+	return 1.03 // Default
+}
+
+// GetBOXParamConfig returns the full BOX parameter config (with migration)
+func (ic *IndicatorConfig) GetBOXParamConfig() *types.BOXParamConfig {
+	ic.MigrateIndicatorConfig()
+	if ic.BOX != nil {
+		return ic.BOX
+	}
+	return &types.BOXParamConfig{Ratio: 1.03} // Default
+}
+
+// GetMACDPeriods returns MACD periods (always from structured config)
+func (ic *IndicatorConfig) GetMACDPeriods() (fast, slow, signal int) {
+	ic.MigrateIndicatorConfig()
+	if ic.MACD != nil {
+		fast = ic.MACD.FastPeriod
+		slow = ic.MACD.SlowPeriod
+		signal = ic.MACD.SignalPeriod
+	}
+	if fast == 0 {
+		fast = 12
+	}
+	if slow == 0 {
+		slow = 26
+	}
+	if signal == 0 {
+		signal = 9
+	}
+	return fast, slow, signal
 }

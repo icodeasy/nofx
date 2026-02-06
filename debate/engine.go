@@ -311,16 +311,17 @@ func (e *DebateEngine) buildMarketContext(session *store.DebateSessionWithDetail
 	}
 
 	// Fetch market data for each candidate
+	// Both store and market now use shared types.*ParamConfig, so no conversion needed
 	marketDataMap := make(map[string]*market.Data)
 	fetchConfig := market.TimeframeFetchConfig{
-		Timeframes:        timeframes,
-		PrimaryTimeframe:  primaryTimeframe,
-		DisplayCount:      klineCount,
-		BOXRatio:          config.Indicators.BOXRatio,
-		EMAPeriods:       config.Indicators.EMAPeriods,
-		RSIPeriods:       config.Indicators.RSIPeriods,
-		ATRPeriods:       config.Indicators.ATRPeriods,
-		BOLLPeriods:       config.Indicators.BOLLPeriods,
+		Timeframes:       timeframes,
+		PrimaryTimeframe: primaryTimeframe,
+		DisplayCount:     klineCount,
+		EMA:              config.Indicators.GetEMAParamConfig(),
+		RSI:              config.Indicators.GetRSIParamConfig(),
+		ATR:              config.Indicators.GetATRParamConfig(),
+		BOLL:             config.Indicators.GetBOLLParamConfig(),
+		BOX:              config.Indicators.GetBOXParamConfig(),
 	}
 	for _, coin := range candidates {
 		data, err := market.GetWithTimeframes(coin.Symbol, fetchConfig)

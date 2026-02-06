@@ -535,11 +535,24 @@ export interface IndicatorConfig {
   enable_volume: boolean;
   enable_oi: boolean;
   enable_funding_rate: boolean;
+
+  // ========== NEW: Structured Indicator Parameter Configurations ==========
+  // These are the preferred way to configure indicators (self-documenting, extensible)
+  ema?: EMAParamConfig;
+  rsi?: RSIParamConfig;
+  macd?: MACDParamConfig;
+  atr?: ATRParamConfig;
+  boll?: BOLLParamConfig;
+  box?: BOXParamConfig;
+
+  // ========== DEPRECATED: Old-style period configurations ==========
+  // Kept for backward compatibility. Will be migrated to new format automatically.
   ema_periods?: number[];
   rsi_periods?: number[];
   atr_periods?: number[];
   boll_periods?: number[];
   box_ratio?: number;
+
   external_data_sources?: ExternalDataSource[];
 
   // ========== NofxOS 数据源统一配置 ==========
@@ -565,6 +578,55 @@ export interface IndicatorConfig {
   enable_price_ranking?: boolean;
   price_ranking_duration?: string;  // "1h", "4h", "24h" or "1h,4h,24h"
   price_ranking_limit?: number;
+}
+
+// ========== Structured Indicator Parameter Types ==========
+
+// EMA parameter configuration
+// Wrapper for future extensibility (colors, labels, etc.)
+export interface EMAParamConfig {
+  periods?: number[];  // EMA periods, e.g. [20, 50, 200]
+  // Future extensions can be added here:
+  // colors?: string[];
+  // labels?: string[];
+}
+
+// RSI parameter configuration
+export interface RSIParamConfig {
+  periods?: number[];  // RSI periods, e.g. [7, 14]
+  // Future extensions can be added here:
+  // show_zone?: boolean;
+  // overbought?: number;
+}
+
+// MACD parameter configuration
+export interface MACDParamConfig {
+  fast_period?: number;    // Fast EMA period (default: 12)
+  slow_period?: number;    // Slow EMA period (default: 26)
+  signal_period?: number;  // Signal line period (default: 9)
+  // Future extensions can be added here:
+  // macd_color?: string;
+}
+
+// ATR parameter configuration
+export interface ATRParamConfig {
+  periods?: number[];  // ATR periods, e.g. [14]
+}
+
+// Bollinger Bands parameter configuration
+export interface BOLLParamConfig {
+  periods?: number[];           // BOLL periods, e.g. [20]
+  std_dev_multiplier?: number;  // Standard deviation multiplier (default: 2.0)
+  // Future extensions can be added here:
+  // upper_color?: string;
+  // fill?: boolean;
+}
+
+// Expectation Box parameter configuration
+export interface BOXParamConfig {
+  ratio?: number; // Price movement ratio (default: 1.03 = 3%)
+  // Future extensions can be added here:
+  // top_color?: string;
 }
 
 export interface KlineConfig {

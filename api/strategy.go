@@ -481,16 +481,18 @@ func (s *Server) handleStrategyTestRun(c *gin.Context) {
 
 	fmt.Printf("📊 Using timeframes: %v, primary: %s, kline count: %d\n", timeframes, primaryTimeframe, klineCount)
 
-	// Build fetch config
+	// Build fetch config from ParamConfig objects
+	// Both store and market now use shared types.*ParamConfig, so no conversion needed
+	indicatorConfig := req.Config.Indicators
 	fetchConfig := market.TimeframeFetchConfig{
-		Timeframes:        timeframes,
-		PrimaryTimeframe:  primaryTimeframe,
-		DisplayCount:      klineCount,
-		BOXRatio:          req.Config.Indicators.BOXRatio,
-		EMAPeriods:       req.Config.Indicators.EMAPeriods,
-		RSIPeriods:       req.Config.Indicators.RSIPeriods,
-		ATRPeriods:       req.Config.Indicators.ATRPeriods,
-		BOLLPeriods:       req.Config.Indicators.BOLLPeriods,
+		Timeframes:       timeframes,
+		PrimaryTimeframe: primaryTimeframe,
+		DisplayCount:     klineCount,
+		EMA:              indicatorConfig.GetEMAParamConfig(),
+		RSI:              indicatorConfig.GetRSIParamConfig(),
+		ATR:              indicatorConfig.GetATRParamConfig(),
+		BOLL:             indicatorConfig.GetBOLLParamConfig(),
+		BOX:              indicatorConfig.GetBOXParamConfig(),
 	}
 
 	// Get real market data (using multiple timeframes)
