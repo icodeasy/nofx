@@ -1566,26 +1566,22 @@ func (e *StrategyEngine) formatPositionInfo(index int, pos PositionInfo, ctx *Co
 		expectedOpenAction := "open_" + pos.Side
 		expectedCloseAction := "close_" + pos.Side
 
-		// Decisions are sorted latest to oldest, iterate to find the current position's decisions
+		// Decisions are sorted latest to oldest.
+		// Strategy: collect all decisions until we find a close action, then stop.
+		// This ensures we only show decisions for the currently open position.
+		collecting := false
 		for _, dec := range ctx.PositionDecisions {
-			if dec.Symbol == pos.Symbol && dec.Side == pos.Side {
-				if dec.Action == expectedOpenAction {
-					// Found the most recent open action - this starts our current position
-					// Add this open decision and continue collecting until we see a close
-					activeDecisions = append(activeDecisions, dec)
-				} else if dec.Action == expectedCloseAction {
-					// Hit a close decision
-					if len(activeDecisions) > 0 {
-						// We've already collected decisions for current position, this close ends it
+			if dec.Symbol == pos.Symbol && dec.Side == pos.Side && dec.Action != "wait" {
+				if dec.Action == expectedCloseAction {
+					// Found a close - if we were collecting, we're done
+					if collecting {
 						break
 					}
-					// No active decisions collected yet - this is the most recent decision
-					// It's a close for current position that hasn't executed yet
-					// Skip it and continue looking backward for an open action
-				} else if len(activeDecisions) > 0 {
-					// We're in the middle of collecting decisions for current position
-					// This might be another open_{side} (add to position) or other action
+					// Otherwise skip this close and keep looking for an open
+				} else if dec.Action == expectedOpenAction || collecting {
+					// Start collecting at first open (or match action if already collecting)
 					activeDecisions = append(activeDecisions, dec)
+					collecting = true
 				}
 			}
 		}
