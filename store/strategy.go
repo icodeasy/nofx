@@ -298,7 +298,7 @@ func GetDefaultStrategyConfig(lang string) StrategyConfig {
 			MACD: &types.MACDParamConfig{FastPeriod: 12, SlowPeriod: 26, SignalPeriod: 9},
 			ATR:  &types.ATRParamConfig{Periods: []int{14}},
 			BOLL: &types.BOLLParamConfig{Periods: []int{20}, StdDevMultiplier: 2.0},
-			BOX:  &types.BOXParamConfig{Ratio: 1.03},
+			BOX:  &types.BOXParamConfig{Ratio: 1.03, KlineCount: 1000},
 			// NofxOS unified API key
 			NofxOSAPIKey: "cm_568c67eae410d912c54c",
 			// Quant data
@@ -654,9 +654,13 @@ func (ic *IndicatorConfig) GetBOXRatio() float64 {
 func (ic *IndicatorConfig) GetBOXParamConfig() *types.BOXParamConfig {
 	ic.MigrateIndicatorConfig()
 	if ic.BOX != nil {
+		// Ensure KlineCount has a default value
+		if ic.BOX.KlineCount == 0 {
+			ic.BOX.KlineCount = 1000
+		}
 		return ic.BOX
 	}
-	return &types.BOXParamConfig{Ratio: 1.03} // Default
+	return &types.BOXParamConfig{Ratio: 1.03, KlineCount: 1000} // Default
 }
 
 // GetMACDPeriods returns MACD periods (always from structured config)

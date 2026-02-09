@@ -33,5 +33,6 @@ type BOLLParamConfig struct {
 
 // BOXParamConfig Expectation Box parameter configuration
 type BOXParamConfig struct {
-	Ratio float64 `json:"ratio,omitempty"` // Price movement ratio (default: 1.03 = 3%)
+	Ratio      float64 `json:"ratio,omitempty"`       // Price movement ratio (default: 1.03 = 3%)
+	KlineCount int     `json:"kline_count,omitempty"` // Number of klines to fetch for calculation (default: 1000)
 }

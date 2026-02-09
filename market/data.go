@@ -340,6 +340,13 @@ func GetWithTimeframes(symbol string, config TimeframeFetchConfig) (*Data, error
 	// Check if this is an xyz dex asset (use Hyperliquid API)
 	isXyzAsset := IsXyzDexAsset(symbol)
 
+	// Determine kline count based on BOX configuration
+	// BOX requires more historical data to calculate support/resistance levels
+	klineCount := 200 // Default for non-BOX indicators
+	if config.BOX != nil && config.BOX.KlineCount > 0 {
+		klineCount = config.BOX.KlineCount
+	}
+
 	// Get K-line data for each timeframe
 	for _, tf := range config.Timeframes {
 		var klines []Kline
@@ -347,14 +354,14 @@ func GetWithTimeframes(symbol string, config TimeframeFetchConfig) (*Data, error
 
 		if isXyzAsset {
 			// Use Hyperliquid API for xyz dex assets
-			klines, err = getKlinesFromHyperliquid(symbol, tf, 200)
+			klines, err = getKlinesFromHyperliquid(symbol, tf, klineCount)
 			if err != nil {
 				logger.Infof("⚠️ Failed to get %s %s K-line from Hyperliquid: %v", symbol, tf, err)
 				continue
 			}
 		} else {
 			// Use CoinAnk for regular crypto assets
-			klines, err = getKlinesFromCoinAnk(symbol, tf, 200)
+			klines, err = getKlinesFromCoinAnk(symbol, tf, klineCount)
 			if err != nil {
 				logger.Infof("⚠️ Failed to get %s %s K-line from CoinAnk: %v", symbol, tf, err)
 				continue

@@ -51,6 +51,7 @@ export function IndicatorEditor({
       timeframes: { zh: '时间周期', en: 'Timeframes' },
       timeframesDesc: { zh: '选择 K 线分析周期，★ 为主周期（双击设置）', en: 'Select K-line timeframes, ★ = primary (double-click)' },
       klineCount: { zh: 'K 线数量', en: 'K-line Count' },
+      klineCountBox: { zh: 'BOX K线数', en: 'BOX Klines' },
       scalp: { zh: '超短', en: 'Scalp' },
       intraday: { zh: '日内', en: 'Intraday' },
       swing: { zh: '波段', en: 'Swing' },
@@ -675,8 +676,8 @@ export function IndicatorEditor({
               { key: 'enable_rsi', label: 'rsi', desc: 'rsiDesc', color: '#F6465D', paramKey: 'rsi', defaultPeriods: '7,14', title: 'RSI periods - comma separated values (e.g., 7,14). Standard: 14. Oversold <30, Overbought >70' },
               { key: 'enable_atr', label: 'atr', desc: 'atrDesc', color: '#60a5fa', paramKey: 'atr', defaultPeriods: '14', title: 'ATR period - measures volatility. Higher values = more smoothing. Standard: 14' },
               { key: 'enable_boll', label: 'boll', desc: 'bollDesc', color: '#ec4899', paramKey: 'boll', defaultPeriods: '20', title: 'Bollinger Bands period - typically 20. Measures price volatility using standard deviations' },
-              { key: 'enable_box', label: 'box', desc: 'boxDesc', color: '#14b8a6', paramKey: 'box', defaultRatio: '1.03', title: 'Top/bottom detection ratio (default 1.03 = 3%, must be > 1.0)' },
-            ].map(({ key, label, desc, color, paramKey, defaultPeriods, defaultRatio, title }) => (
+              { key: 'enable_box', label: 'box', desc: 'boxDesc', color: '#14b8a6', paramKey: 'box', defaultRatio: '1.03', defaultKlineCount: '1000', title: 'Top/bottom detection ratio (default 1.03 = 3%, must be > 1.0)', titleKlineCount: 'K-line count for box calculation (default 1000). More klines = better support/resistance detection' },
+            ].map(({ key, label, desc, color, paramKey, defaultPeriods, defaultRatio, defaultKlineCount, title, titleKlineCount }) => (
               <div
                 key={key}
                 className="p-2.5 rounded-lg transition-all"
@@ -728,13 +729,34 @@ export function IndicatorEditor({
                     onChange={(e) => {
                       if (disabled) return
                       const ratio = parseFloat(e.target.value.trim())
-                      onChange({ ...config, [paramKey]: { ratio: isNaN(ratio) || ratio < 1.01 ? 1.03 : ratio } })
+                      const currentConfig = config[paramKey as keyof IndicatorConfig] as { ratio?: number; kline_count?: number } || {}
+                      onChange({ ...config, [paramKey]: { ...currentConfig, ratio: isNaN(ratio) || ratio < 1.01 ? 1.03 : ratio } })
                     }}
                     disabled={disabled}
                     placeholder={defaultRatio}
                     className="w-full px-2 py-1 rounded text-[10px] text-center"
                     style={{ background: '#1E2329', border: '1px solid #2B3139', color: '#EAECEF' }}
                     title={title}
+                  />
+                )}
+                {paramKey && defaultKlineCount && config[key as keyof IndicatorConfig] && (
+                  <input
+                    type="number"
+                    step="100"
+                    min="200"
+                    max="5000"
+                    value={(config[paramKey as keyof IndicatorConfig] as { kline_count?: number })?.kline_count?.toString() || defaultKlineCount}
+                    onChange={(e) => {
+                      if (disabled) return
+                      const klineCount = parseInt(e.target.value.trim())
+                      const currentConfig = config[paramKey as keyof IndicatorConfig] as { ratio?: number; kline_count?: number } || {}
+                      onChange({ ...config, [paramKey]: { ...currentConfig, kline_count: isNaN(klineCount) || klineCount < 200 ? 1000 : klineCount } })
+                    }}
+                    disabled={disabled}
+                    placeholder={defaultKlineCount}
+                    className="w-full px-2 py-1 rounded text-[10px] text-center mt-1"
+                    style={{ background: '#1E2329', border: '1px solid #2B3139', color: '#EAECEF' }}
+                    title={titleKlineCount}
                   />
                 )}
               </div>

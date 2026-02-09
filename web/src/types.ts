@@ -625,6 +625,7 @@ export interface BOLLParamConfig {
 // Expectation Box parameter configuration
 export interface BOXParamConfig {
   ratio?: number; // Price movement ratio (default: 1.03 = 3%)
+  kline_count?: number; // Number of klines to fetch for calculation (default: 1000)
   // Future extensions can be added here:
   // top_color?: string;
 }
