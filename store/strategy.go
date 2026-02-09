@@ -292,11 +292,13 @@ func GetDefaultStrategyConfig(lang string) StrategyConfig {
 			EnableVolume:      true,
 			EnableOI:          true,
 			EnableFundingRate: true,
-			EMAPeriods:        []int{20, 50},
-			RSIPeriods:        []int{7, 14},
-			ATRPeriods:        []int{14},
-			BOLLPeriods:       []int{20},
-			BOXRatio:          1.03, // 3% default ratio (1.03 = 3% price movement)
+			// NEW: Structured indicator parameter configurations
+			EMA:  &types.EMAParamConfig{Periods: []int{20, 50}},
+			RSI:  &types.RSIParamConfig{Periods: []int{7, 14}},
+			MACD: &types.MACDParamConfig{FastPeriod: 12, SlowPeriod: 26, SignalPeriod: 9},
+			ATR:  &types.ATRParamConfig{Periods: []int{14}},
+			BOLL: &types.BOLLParamConfig{Periods: []int{20}, StdDevMultiplier: 2.0},
+			BOX:  &types.BOXParamConfig{Ratio: 1.03},
 			// NofxOS unified API key
 			NofxOSAPIKey: "cm_568c67eae410d912c54c",
 			// Quant data
