@@ -16,6 +16,7 @@ import {
   calculateSMA,
   calculateEMA,
   calculateBollingerBands,
+  findTopsAndBottoms,
   type Kline,
 } from '../utils/indicators'
 import { Settings, BarChart2 } from 'lucide-react'
@@ -147,6 +148,8 @@ export function AdvancedChart({
     { id: 'ema12', name: 'EMA12', enabled: false, color: '#A8E6CF', params: { period: 12 } },
     { id: 'ema26', name: 'EMA26', enabled: false, color: '#FFD3B6', params: { period: 26 } },
     { id: 'bb', name: 'Bollinger Bands', enabled: false, color: '#9B59B6' },
+    { id: 'box-tops', name: 'BOX Tops', enabled: false, color: '#F6465D' },
+    { id: 'box-bottoms', name: 'BOX Bottoms', enabled: false, color: '#0ECB81' },
   ])
 
   // 从服务获取K线数据
@@ -915,6 +918,31 @@ export function AdvancedChart({
         indicatorSeriesRef.current.set(indicator.id + '_upper', upperSeries)
         indicatorSeriesRef.current.set(indicator.id + '_middle', middleSeries)
         indicatorSeriesRef.current.set(indicator.id + '_lower', lowerSeries)
+      } else if (indicator.id === 'box-tops' || indicator.id === 'box-bottoms') {
+        // BOX indicator - client-side calculation (consistent with MA/EMA)
+        const isTops = indicator.id === 'box-tops'
+        const boxRatio = 1.03 // 3% price movement
+        const { tops, bottoms } = findTopsAndBottoms(klineData, boxRatio)
+        const points = isTops ? tops : bottoms
+
+        // Take only the 2 most recent points to create a line
+        const recentPoints = points.slice(-2)
+
+        if (recentPoints.length > 0) {
+          const lineData = recentPoints.map(p => ({
+            time: p.time as UTCTimestamp,
+            value: p.price,
+          }))
+
+          const series = chartRef.current.addSeries(LineSeries, {
+            color: indicator.color,
+            lineWidth: 2,
+            title: indicator.name,
+            lineStyle: 2, // Dashed line to distinguish from MA/EMA
+          })
+          series.setData(lineData)
+          indicatorSeriesRef.current.set(indicator.id, series)
+        }
       }
     })
   }

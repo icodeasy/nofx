@@ -215,3 +215,94 @@ export function calculateBollingerBands(
   return result
 }
 
+// BOX (Expectation Box) Tops and Bottoms
+export interface TopBottomPoint {
+  time: number   // Unix timestamp in seconds
+  price: number  // Price at this point
+}
+
+// findTopsAndBottoms finds alternating tops and bottoms based on price movement ratio
+// Algorithm: Search for local extrema where price moves by ratio in opposite direction
+// ratio: Price movement ratio to confirm top/bottom (e.g., 1.03 = 3%)
+export function findTopsAndBottoms(data: Kline[], ratio: number): { tops: TopBottomPoint[], bottoms: TopBottomPoint[] } {
+  const tops: TopBottomPoint[] = []
+  const bottoms: TopBottomPoint[] = []
+
+  if (data.length < 3 || ratio <= 1) {
+    return { tops, bottoms }
+  }
+
+  // Start by finding the first top
+  let lookingForTop = true
+  let prevExtremeIndex = 0
+
+  for (let i = 1; i < data.length; i++) {
+    const currentPrice = data[i].close
+    const prevExtremePrice = data[prevExtremeIndex].close
+
+    if (lookingForTop) {
+      // Update the top if current price is higher
+      if (currentPrice > prevExtremePrice) {
+        prevExtremeIndex = i
+      } else if (currentPrice < prevExtremePrice / ratio) {
+        // Switch to finding bottom if price ratio condition is met
+        tops.push({
+          time: data[prevExtremeIndex].time,
+          price: prevExtremePrice,
+        })
+        prevExtremeIndex = i
+        lookingForTop = false
+      }
+    } else {
+      // Update the bottom if current price is lower
+      if (currentPrice < prevExtremePrice) {
+        prevExtremeIndex = i
+      } else if (currentPrice > prevExtremePrice * ratio) {
+        // Switch to finding top if price ratio condition is met
+        bottoms.push({
+          time: data[prevExtremeIndex].time,
+          price: prevExtremePrice,
+        })
+        prevExtremeIndex = i
+        lookingForTop = true
+      }
+    }
+  }
+
+  // Add the last identified extreme point if not already included
+  let lastIndex = -1
+  if (lookingForTop) {
+    // Check if this index is already in tops
+    for (const t of tops) {
+      if (t.time === data[prevExtremeIndex].time) {
+        lastIndex = prevExtremeIndex
+        break
+      }
+    }
+  } else {
+    // Check if this index is already in bottoms
+    for (const b of bottoms) {
+      if (b.time === data[prevExtremeIndex].time) {
+        lastIndex = prevExtremeIndex
+        break
+      }
+    }
+  }
+
+  if (lastIndex !== prevExtremeIndex) {
+    if (lookingForTop) {
+      tops.push({
+        time: data[prevExtremeIndex].time,
+        price: data[prevExtremeIndex].close,
+      })
+    } else {
+      bottoms.push({
+        time: data[prevExtremeIndex].time,
+        price: data[prevExtremeIndex].close,
+      })
+    }
+  }
+
+  return { tops, bottoms }
+}
+
