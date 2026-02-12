@@ -10,6 +10,7 @@ import (
 	"nofx/logger"
 	"nofx/manager"
 	"nofx/mcp"
+	"nofx/news"
 	"nofx/store"
 	"os"
 	"os/signal"
@@ -95,6 +96,10 @@ func main() {
 	// time.Sleep(500 * time.Millisecond)
 	logger.Info("📊 Using CoinAnk API for all market data (WebSocket cache disabled)")
 
+	// Initialize news service
+	newsService := news.NewService(st)
+	newsService.StartScheduler()
+
 	// Create TraderManager and BacktestManager
 	traderManager := manager.NewTraderManager()
 	mcpClient := newSharedMCPClient()
@@ -129,7 +134,7 @@ func main() {
 	}
 
 	// Start API server
-	server := api.NewServer(traderManager, st, cryptoService, backtestManager, cfg.APIServerPort)
+	server := api.NewServer(traderManager, st, cryptoService, backtestManager, newsService, cfg.APIServerPort)
 	go func() {
 		if err := server.Start(); err != nil {
 			logger.Fatalf("❌ Failed to start API server: %v", err)
@@ -145,6 +150,9 @@ func main() {
 
 	<-quit
 	logger.Info("📴 Shutdown signal received, closing system...")
+
+	// Stop news service
+	newsService.Stop()
 
 	// Stop all traders
 	traderManager.StopAll()

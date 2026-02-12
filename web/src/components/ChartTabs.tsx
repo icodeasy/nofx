@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { EquityChart } from './EquityChart'
 import { AdvancedChart } from './AdvancedChart'
+import { NewsTab } from './NewsTab'
 import { useLanguage } from '../contexts/LanguageContext'
 import { t } from '../i18n/translations'
-import { BarChart3, CandlestickChart, ChevronDown, Search } from 'lucide-react'
+import { BarChart3, CandlestickChart, ChevronDown, Search, Newspaper } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 const API_BASE = import.meta.env.VITE_API_BASE || ''
@@ -15,7 +16,7 @@ interface ChartTabsProps {
   exchangeId?: string // 交易所ID
 }
 
-type ChartTab = 'equity' | 'kline'
+type ChartTab = 'equity' | 'kline' | 'news'
 type Interval = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d'
 type MarketType = 'hyperliquid' | 'crypto' | 'stocks' | 'forex' | 'metals'
 
@@ -184,28 +185,19 @@ export function ChartTabs({ traderId, selectedSymbol, updateKey, exchangeId }: C
             <span className="md:hidden">Kline</span>
           </button>
 
-          {/* Market Type Pills - Only when kline active, HIDDEN on mobile to save space */}
-          {activeTab === 'kline' && (
-            <div className="hidden md:flex items-center gap-1 ml-2 border-l border-white/10 pl-2">
-              {(Object.keys(MARKET_CONFIG) as MarketType[]).map((type) => {
-                const config = MARKET_CONFIG[type]
-                const isActive = marketType === type
-                return (
-                  <button
-                    key={type}
-                    onClick={() => handleMarketTypeChange(type)}
-                    className={`px-2.5 py-1 text-[10px] font-medium rounded transition-all border ${isActive
-                      ? 'bg-white/10 text-white border-white/20'
-                      : 'text-nofx-text-muted border-transparent hover:text-nofx-text-main hover:bg-white/5'
-                      }`}
-                  >
-                    <span className="mr-1 opacity-70">{config.icon}</span>
-                    {language === 'zh' ? config.label.zh : config.label.en}
-                  </button>
-                )
-              })}
-            </div>
-          )}
+          <button
+            onClick={() => setActiveTab('news')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium transition-all ${activeTab === 'news'
+              ? 'bg-nofx-gold/10 text-nofx-gold border border-nofx-gold/20 shadow-[0_0_10px_rgba(240,185,11,0.1)]'
+              : 'text-nofx-text-muted hover:text-nofx-text-main hover:bg-white/5'
+              }`}
+          >
+            <Newspaper className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">News</span>
+            <span className="md:hidden">News</span>
+          </button>
+
+          {/* Market Type Pills - HIDDEN (not useful currently) */}
         </div>
 
         {/* Right: Symbol + Interval */}
@@ -313,6 +305,17 @@ export function ChartTabs({ traderId, selectedSymbol, updateKey, exchangeId }: C
               className="h-full w-full absolute inset-0"
             >
               <EquityChart traderId={traderId} embedded />
+            </motion.div>
+          ) : activeTab === 'news' ? (
+            <motion.div
+              key="news"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="h-full w-full absolute inset-0"
+            >
+              <NewsTab />
             </motion.div>
           ) : (
             <motion.div

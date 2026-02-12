@@ -13,6 +13,7 @@ import (
 	"nofx/logger"
 	"nofx/manager"
 	"nofx/market"
+	"nofx/news"
 	"nofx/provider/alpaca"
 	"nofx/provider/coinank/coinank_api"
 	"nofx/provider/coinank/coinank_enum"
@@ -36,12 +37,13 @@ type Server struct {
 	cryptoHandler   *CryptoHandler
 	backtestManager *backtest.Manager
 	debateHandler   *DebateHandler
+	newsHandler     *NewsHandler
 	httpServer      *http.Server
 	port            int
 }
 
 // NewServer Creates API server
-func NewServer(traderManager *manager.TraderManager, st *store.Store, cryptoService *crypto.CryptoService, backtestManager *backtest.Manager, port int) *Server {
+func NewServer(traderManager *manager.TraderManager, st *store.Store, cryptoService *crypto.CryptoService, backtestManager *backtest.Manager, newsService *news.Service, port int) *Server {
 	// Set to Release mode (reduce log output)
 	gin.SetMode(gin.ReleaseMode)
 
@@ -61,6 +63,9 @@ func NewServer(traderManager *manager.TraderManager, st *store.Store, cryptoServ
 	debateHandler := NewDebateHandler(debateStore, st.Strategy(), st.AIModel())
 	debateHandler.SetTraderManager(traderManager)
 
+	// Create news handler
+	newsHandler := NewNewsHandler(newsService)
+
 	s := &Server{
 		router:          router,
 		traderManager:   traderManager,
@@ -68,6 +73,7 @@ func NewServer(traderManager *manager.TraderManager, st *store.Store, cryptoServ
 		cryptoHandler:   cryptoHandler,
 		backtestManager: backtestManager,
 		debateHandler:   debateHandler,
+		newsHandler:     newsHandler,
 		port:            port,
 	}
 
@@ -129,6 +135,10 @@ func (s *Server) setupRoutes() {
 
 		// Public strategy market (no authentication required)
 		api.GET("/strategies/public", s.handlePublicStrategies)
+
+		// News (no authentication required - public news feed)
+		api.GET("/news", s.newsHandler.HandleGetNews)
+		api.POST("/news/refresh", s.newsHandler.HandleRefreshNews)
 
 		// Authentication related routes (no authentication required)
 		api.POST("/register", s.handleRegister)

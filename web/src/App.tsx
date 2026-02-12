@@ -15,6 +15,7 @@ import { StrategyStudioPage } from './pages/StrategyStudioPage'
 import { DebateArenaPage } from './pages/DebateArenaPage'
 import { StrategyMarketPage } from './pages/StrategyMarketPage'
 import { DataPage } from './pages/DataPage'
+import { NewsPage } from './pages/NewsPage'
 import { LoginRequiredOverlay } from './components/LoginRequiredOverlay'
 import HeaderBar from './components/HeaderBar'
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext'
@@ -41,7 +42,7 @@ type Page =
   | 'trader'
   | 'backtest'
   | 'strategy'
-  | 'strategy-market'
+  | 'news'
   | 'data'
   | 'debate'
   | 'faq'
@@ -69,7 +70,7 @@ function App() {
     if (path === '/traders' || hash === 'traders') return 'traders'
     if (path === '/backtest' || hash === 'backtest') return 'backtest'
     if (path === '/strategy' || hash === 'strategy') return 'strategy'
-    if (path === '/strategy-market' || hash === 'strategy-market') return 'strategy-market'
+    if (path === '/news' || hash === 'news') return 'news'
     if (path === '/data' || hash === 'data') return 'data'
     if (path === '/debate' || hash === 'debate') return 'debate'
     if (path === '/dashboard' || hash === 'trader' || hash === 'details')
@@ -90,7 +91,7 @@ function App() {
   const navigateToPage = (page: Page) => {
     const pathMap: Record<Page, string> = {
       'competition': '/competition',
-      'strategy-market': '/strategy-market',
+      'news': '/news',
       'data': '/data',
       'traders': '/traders',
       'trader': '/dashboard',
@@ -154,8 +155,8 @@ function App() {
         setCurrentPage('backtest')
       } else if (path === '/strategy' || hash === 'strategy') {
         setCurrentPage('strategy')
-      } else if (path === '/strategy-market' || hash === 'strategy-market') {
-        setCurrentPage('strategy-market')
+      } else if (path === '/news' || hash === 'news') {
+        setCurrentPage('news')
       } else if (path === '/data' || hash === 'data') {
         setCurrentPage('data')
       } else if (path === '/debate' || hash === 'debate') {
@@ -468,8 +469,8 @@ function App() {
               <CompetitionPage />
             ) : currentPage === 'data' ? (
               <DataPage />
-            ) : currentPage === 'strategy-market' ? (
-              <StrategyMarketPage />
+            ) : currentPage === 'news' ? (
+              <NewsPage />
             ) : currentPage === 'traders' ? (
               <AITradersPage
                 onTraderSelect={(traderId) => {
