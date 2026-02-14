@@ -94,6 +94,7 @@ func (s *Server) handleGetStrategies(c *gin.Context) {
 			"is_default":     st.IsDefault,
 			"is_public":      st.IsPublic,
 			"config_visible": st.ConfigVisible,
+			"rating":         st.Rating,
 			"config":         config,
 			"created_at":     st.CreatedAt,
 			"updated_at":     st.UpdatedAt,
@@ -130,6 +131,7 @@ func (s *Server) handleGetStrategy(c *gin.Context) {
 		"description": strategy.Description,
 		"is_active":   strategy.IsActive,
 		"is_default":  strategy.IsDefault,
+		"rating":      strategy.Rating,
 		"config":      config,
 		"created_at":  strategy.CreatedAt,
 		"updated_at":  strategy.UpdatedAt,
@@ -294,6 +296,42 @@ func (s *Server) handleActivateStrategy(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Strategy activated successfully"})
 }
 
+// handleRateStrategy Rate strategy (good/bad/neutral)
+func (s *Server) handleRateStrategy(c *gin.Context) {
+	userID := c.GetString("user_id")
+	strategyID := c.Param("id")
+
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	var req struct {
+		Rating string `json:"rating" binding:"required"` // "good", "bad", or "" (neutral)
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		SafeBadRequest(c, "Invalid request parameters")
+		return
+	}
+
+	// Validate rating value
+	if req.Rating != "good" && req.Rating != "bad" && req.Rating != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Rating must be 'good', 'bad', or empty string"})
+		return
+	}
+
+	if err := s.store.Strategy().SetRating(userID, strategyID, req.Rating); err != nil {
+		SafeInternalError(c, "Failed to rate strategy", err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Strategy rated successfully",
+		"rating":  req.Rating,
+	})
+}
+
 // handleDuplicateStrategy Duplicate strategy
 func (s *Server) handleDuplicateStrategy(c *gin.Context) {
 	userID := c.GetString("user_id")
@@ -349,6 +387,7 @@ func (s *Server) handleGetActiveStrategy(c *gin.Context) {
 		"description": strategy.Description,
 		"is_active":   strategy.IsActive,
 		"is_default":  strategy.IsDefault,
+		"rating":      strategy.Rating,
 		"config":      config,
 		"created_at":  strategy.CreatedAt,
 		"updated_at":  strategy.UpdatedAt,

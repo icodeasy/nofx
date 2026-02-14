@@ -190,6 +190,7 @@ func (s *Server) setupRoutes() {
 			protected.PUT("/strategies/:id", s.handleUpdateStrategy)
 			protected.DELETE("/strategies/:id", s.handleDeleteStrategy)
 			protected.POST("/strategies/:id/activate", s.handleActivateStrategy)
+			protected.POST("/strategies/:id/rate", s.handleRateStrategy)
 			protected.POST("/strategies/:id/duplicate", s.handleDuplicateStrategy)
 
 			// Debate Arena

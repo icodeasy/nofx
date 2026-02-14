@@ -432,6 +432,7 @@ export interface Strategy {
   is_default: boolean;
   is_public: boolean;           // 是否在策略市场公开
   config_visible: boolean;      // 配置参数是否公开可见
+  rating: 'good' | 'bad' | '';  // 策略评分：good=好, bad=差, ''=中性
   config: StrategyConfig;
   created_at: string;
   updated_at: string;

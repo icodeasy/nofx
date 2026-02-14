@@ -25,6 +25,7 @@ type Strategy struct {
 	IsDefault     bool      `gorm:"column:is_default;default:false" json:"is_default"`
 	IsPublic      bool      `gorm:"column:is_public;default:false;index" json:"is_public"`       // whether visible in strategy market
 	ConfigVisible bool      `gorm:"column:config_visible;default:true" json:"config_visible"`    // whether config details are visible
+	Rating        string    `gorm:"column:rating;default:'';index" json:"rating"`          // Rating: "good", "bad", or "" (neutral)
 	Config        string    `gorm:"not null;default:'{}'" json:"config"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
@@ -467,6 +468,18 @@ func (s *StrategyStore) SetActive(userID, strategyID string) error {
 			Where("id = ? AND (user_id = ? OR is_default = ?)", strategyID, userID, true).
 			Update("is_active", true).Error
 	})
+}
+
+// SetRating set strategy rating (good/bad/neutral)
+func (s *StrategyStore) SetRating(userID, strategyID, rating string) error {
+	// Validate rating value
+	if rating != "good" && rating != "bad" && rating != "" {
+		return fmt.Errorf("invalid rating value: %s (must be 'good', 'bad', or '')", rating)
+	}
+
+	return s.db.Model(&Strategy{}).
+		Where("id = ? AND (user_id = ? OR is_default = ?)", strategyID, userID, true).
+		Update("rating", rating).Error
 }
 
 // Duplicate duplicate a strategy (used to create custom strategy based on default strategy)

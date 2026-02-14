@@ -705,6 +705,11 @@ export const api = {
     return result.data!
   },
 
+  async rateStrategy(strategyId: string, rating: 'good' | 'bad' | ''): Promise<void> {
+    const result = await httpClient.post(`${API_BASE}/strategies/${strategyId}/rate`, { rating })
+    if (!result.success) throw new Error('评分策略失败')
+  },
+
   async duplicateStrategy(strategyId: string): Promise<Strategy> {
     const result = await httpClient.post<Strategy>(`${API_BASE}/strategies/${strategyId}/duplicate`)
     if (!result.success) throw new Error('复制策略失败')

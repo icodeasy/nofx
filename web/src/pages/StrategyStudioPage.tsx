@@ -29,6 +29,8 @@ import {
   Download,
   Upload,
   Globe,
+  ThumbsUp,
+  ThumbsDown,
 } from 'lucide-react'
 import type { Strategy, StrategyConfig, AIModel } from '../types'
 import { confirmToast, notify } from '../lib/notify'
@@ -53,6 +55,7 @@ export function StrategyStudioPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [ratingFilter, setRatingFilter] = useState<'all' | 'good' | 'bad' | 'neutral'>('all')
   const [hasChanges, setHasChanges] = useState(false)
 
   // AI Models for test run
@@ -229,6 +232,7 @@ export function StrategyStudioPage() {
           is_default: false,
           is_public: false,
           config_visible: true,
+          rating: '' as '',
           config: defaultConfig,
           created_at: now,
           updated_at: now,
@@ -307,6 +311,22 @@ export function StrategyStudioPage() {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (!response.ok) throw new Error('Failed to activate strategy')
+      await fetchStrategies()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
+    }
+  }
+
+  // Rate strategy (good/bad)
+  const handleRateStrategy = async (id: string, rating: 'good' | 'bad') => {
+    if (!token) return
+    try {
+      const response = await fetch(`${API_BASE}/strategies/${id}/rate`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rating })
+      })
+      if (!response.ok) throw new Error('Failed to rate strategy')
       await fetchStrategies()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
@@ -724,8 +744,29 @@ export function StrategyStudioPage() {
                 </button>
               </div>
             </div>
+            {/* Rating Filter */}
+            <div className="mb-2 px-2">
+              <select
+                value={ratingFilter}
+                onChange={(e) => setRatingFilter(e.target.value as 'all' | 'good' | 'bad' | 'neutral')}
+                className="w-full text-xs bg-nofx-bg-lighter border border-nofx-gold/20 rounded px-2 py-1 text-nofx-text focus:outline-none focus:border-nofx-gold/50"
+              >
+                <option value="all">{language === 'zh' ? '全部策略' : 'All Strategies'}</option>
+                <option value="good">{language === 'zh' ? '👍 好策略' : '👍 Good'}</option>
+                <option value="bad">{language === 'zh' ? '👎 差策略' : '👎 Bad'}</option>
+                <option value="neutral">{language === 'zh' ? '未标记' : 'Unrated'}</option>
+              </select>
+            </div>
             <div className="space-y-1">
-              {strategies.map((strategy) => (
+              {strategies
+                .filter((strategy) => {
+                  if (ratingFilter === 'all') return true
+                  if (ratingFilter === 'good') return strategy.rating === 'good'
+                  if (ratingFilter === 'bad') return strategy.rating === 'bad'
+                  if (ratingFilter === 'neutral') return strategy.rating === '' || !strategy.rating
+                  return true
+                })
+                .map((strategy) => (
                 <div
                   key={strategy.id}
                   onClick={() => {
@@ -743,6 +784,20 @@ export function StrategyStudioPage() {
                   <div className="flex items-center justify-between">
                     <span className="text-sm truncate text-nofx-text">{strategy.name}</span>
                     <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleRateStrategy(strategy.id, 'good') }}
+                        className={`p-1 rounded hover:bg-white/10 ${strategy.rating === 'good' ? 'text-green-500 bg-green-500/10' : 'text-nofx-text-muted hover:text-white'}`}
+                        title={language === 'zh' ? '标记为好' : 'Mark as Good'}
+                      >
+                        <ThumbsUp className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleRateStrategy(strategy.id, 'bad') }}
+                        className={`p-1 rounded hover:bg-white/10 ${strategy.rating === 'bad' ? 'text-red-500 bg-red-500/10' : 'text-nofx-text-muted hover:text-white'}`}
+                        title={language === 'zh' ? '标记为差' : 'Mark as Bad'}
+                      >
+                        <ThumbsDown className="w-3 h-3" />
+                      </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); handleExportStrategy(strategy) }}
                         className="p-1 rounded hover:bg-white/10 text-nofx-text-muted hover:text-white"
@@ -771,6 +826,18 @@ export function StrategyStudioPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1 mt-1 flex-wrap">
+                    {strategy.rating === 'good' && (
+                      <span className="px-1.5 py-0.5 text-[10px] rounded flex items-center gap-0.5 bg-green-500/15 text-green-500">
+                        <ThumbsUp className="w-2.5 h-2.5" />
+                        {language === 'zh' ? '好' : 'Good'}
+                      </span>
+                    )}
+                    {strategy.rating === 'bad' && (
+                      <span className="px-1.5 py-0.5 text-[10px] rounded flex items-center gap-0.5 bg-red-500/15 text-red-500">
+                        <ThumbsDown className="w-2.5 h-2.5" />
+                        {language === 'zh' ? '差' : 'Bad'}
+                      </span>
+                    )}
                     {strategy.is_active && (
                       <span className="px-1.5 py-0.5 text-[10px] rounded bg-nofx-success/15 text-nofx-success">
                         {t('active')}
