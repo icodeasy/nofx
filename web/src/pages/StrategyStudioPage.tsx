@@ -838,11 +838,6 @@ export function StrategyStudioPage() {
                         {language === 'zh' ? '差' : 'Bad'}
                       </span>
                     )}
-                    {strategy.is_active && (
-                      <span className="px-1.5 py-0.5 text-[10px] rounded bg-nofx-success/15 text-nofx-success">
-                        {t('active')}
-                      </span>
-                    )}
                     {strategy.is_default && (
                       <span className="px-1.5 py-0.5 text-[10px] rounded bg-nofx-gold/15 text-nofx-gold">
                         {t('default')}
@@ -894,15 +889,6 @@ export function StrategyStudioPage() {
                   )}
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  {!selectedStrategy.is_active && (
-                    <button
-                      onClick={() => handleActivateStrategy(selectedStrategy.id)}
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs transition-colors bg-nofx-success/10 border border-nofx-success/30 text-nofx-success hover:bg-nofx-success/20"
-                    >
-                      <Check className="w-3 h-3" />
-                      {t('activate')}
-                    </button>
-                  )}
                   {!selectedStrategy.is_default && (
                     <button
                       onClick={handleSaveStrategy}

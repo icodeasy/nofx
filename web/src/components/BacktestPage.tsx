@@ -1214,7 +1214,7 @@ export function BacktestPage() {
                           <option value="">{language === 'zh' ? '不使用保存的策略' : 'No saved strategy'}</option>
                           {strategies?.map((s) => (
                             <option key={s.id} value={s.id}>
-                              {s.name} {s.is_active && '✓'} {s.is_default && '⭐'}
+                              {s.name} {s.is_default && '⭐'}
                             </option>
                           ))}
                         </select>

@@ -337,7 +337,6 @@ export function TraderConfigModal({
                   {strategies.map((strategy) => (
                     <option key={strategy.id} value={strategy.id}>
                       {strategy.name}
-                      {strategy.is_active ? ' (当前激活)' : ''}
                       {strategy.is_default ? ' [默认]' : ''}
                     </option>
                   ))}
@@ -356,11 +355,6 @@ export function TraderConfigModal({
                     <span className="text-[#F0B90B] text-sm font-medium">
                       策略详情
                     </span>
-                    {selectedStrategy.is_active && (
-                      <span className="px-2 py-0.5 bg-green-500/20 text-green-400 text-xs rounded">
-                        激活中
-                      </span>
-                    )}
                   </div>
                   <p className="text-sm text-[#848E9C] mb-2">
                     {selectedStrategy.description || '无描述'}
