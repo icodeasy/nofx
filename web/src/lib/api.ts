@@ -391,6 +391,26 @@ export const api = {
     return result.data!
   },
 
+  // 获取指定时间戳周围的决策记录（用于从图表点击导航）
+  async getDecisionsAroundTimestamp(
+    traderId: string,
+    timestamp: number, // Unix timestamp in seconds
+    before: number = 5,
+    after: number = 5
+  ): Promise<DecisionRecord[]> {
+    const params = new URLSearchParams()
+    params.append('trader_id', traderId)
+    params.append('timestamp', timestamp.toString())
+    params.append('before', before.toString())
+    params.append('after', after.toString())
+
+    const result = await httpClient.get<DecisionRecord[]>(
+      `${API_BASE}/decisions/around?${params}`
+    )
+    if (!result.success) throw new Error('获取决策记录失败')
+    return result.data || []
+  },
+
   // 获取统计信息（支持trader_id）
   async getStatistics(traderId?: string): Promise<Statistics> {
     const url = traderId

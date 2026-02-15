@@ -205,6 +205,52 @@ func (s *DecisionStore) GetLatestRecords(traderID string, n int) ([]*DecisionRec
 	return records, nil
 }
 
+// GetRecordsAroundTimestamp gets N decisions before and M decisions after a specific timestamp
+// Returns decisions sorted chronologically (old to new)
+func (s *DecisionStore) GetRecordsAroundTimestamp(
+	traderID string,
+	targetTime time.Time,
+	beforeCount int,
+	afterCount int,
+) ([]*DecisionRecord, error) {
+	// Get decisions before target time (ORDER BY timestamp DESC, LIMIT beforeCount)
+	var beforeRecords []*DecisionRecordDB
+	err := s.db.Where("trader_id = ? AND timestamp < ?", traderID, targetTime).
+		Order("timestamp DESC").
+		Limit(beforeCount).
+		Find(&beforeRecords).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to query decisions before timestamp: %w", err)
+	}
+
+	// Get decisions at or after target time (ORDER BY timestamp ASC, LIMIT afterCount + 1)
+	// We get afterCount + 1 to potentially include the closest decision at target time
+	var afterRecords []*DecisionRecordDB
+	err = s.db.Where("trader_id = ? AND timestamp >= ?", traderID, targetTime).
+		Order("timestamp ASC").
+		Limit(afterCount + 1).
+		Find(&afterRecords).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to query decisions after timestamp: %w", err)
+	}
+
+	// Combine and sort chronologically
+	totalRecords := len(beforeRecords) + len(afterRecords)
+	records := make([]*DecisionRecord, 0, totalRecords)
+
+	// Add before records in reverse order (to get chronological)
+	for i := len(beforeRecords) - 1; i >= 0; i-- {
+		records = append(records, beforeRecords[i].toRecord())
+	}
+
+	// Add after records
+	for _, db := range afterRecords {
+		records = append(records, db.toRecord())
+	}
+
+	return records, nil
+}
+
 // GetAllLatestRecords gets the latest N records for all traders
 func (s *DecisionStore) GetAllLatestRecords(n int) ([]*DecisionRecord, error) {
 	var dbRecords []*DecisionRecordDB

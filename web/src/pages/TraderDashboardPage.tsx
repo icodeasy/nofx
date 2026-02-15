@@ -105,6 +105,7 @@ interface TraderDashboardPageProps {
     decisions?: DecisionRecord[]
     decisionsLimit: number
     onDecisionsLimitChange: (limit: number) => void
+    onChartClickModeChange?: (enabled: boolean) => void // Callback to notify when chart click mode changes
     stats?: Statistics
     lastUpdate: string
     language: Language
@@ -126,14 +127,25 @@ export function TraderDashboardPage({
     selectedTraderId,
     onTraderSelect,
     onNavigateToTraders,
+    onChartClickModeChange,
     exchanges,
 }: TraderDashboardPageProps) {
     const [closingPosition, setClosingPosition] = useState<string | null>(null)
     const [selectedChartSymbol, setSelectedChartSymbol] = useState<string | undefined>(undefined)
     const [chartUpdateKey, setChartUpdateKey] = useState<number>(0)
     const chartSectionRef = useRef<HTMLDivElement>(null)
+    const decisionListRef = useRef<HTMLDivElement>(null)
+    const decisionCardRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+    const [highlightedDecisionId, setHighlightedDecisionId] = useState<number | null>(null)
     const [showWalletAddress, setShowWalletAddress] = useState<boolean>(false)
     const [copiedAddress, setCopiedAddress] = useState<boolean>(false)
+
+    // Chart click mode state
+    const [chartClickMode, setChartClickMode] = useState<{
+        enabled: boolean
+        timestamp?: number
+        decisions?: DecisionRecord[]
+    }>({ enabled: false })
 
     // Current positions pagination
     const [positionsPageSize, setPositionsPageSize] = useState<number>(20)
@@ -186,6 +198,83 @@ export function TraderDashboardPage({
         setTimeout(() => {
             chartSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
         }, 100)
+    }
+
+    // Handle chart click to navigate to decision
+    const handleChartClick = async (timestamp: number) => {
+        console.log('🎯 handleChartClick called with timestamp:', timestamp)
+        if (!selectedTraderId) {
+            console.log('❌ No selectedTraderId, returning')
+            return
+        }
+
+        try {
+            console.log('📡 Fetching decisions for trader:', selectedTraderId, 'timestamp:', timestamp)
+            // Fetch 5 decisions before + 5 decisions after
+            const fetchedDecisions = await api.getDecisionsAroundTimestamp(
+                selectedTraderId,
+                timestamp,
+                5,
+                5
+            )
+
+            console.log('✅ Fetched decisions:', fetchedDecisions?.length || 0, fetchedDecisions)
+
+            if (fetchedDecisions && fetchedDecisions.length > 0) {
+                // Find closest decision to clicked timestamp
+                const targetMs = timestamp * 1000
+                let closestDecision = fetchedDecisions[0]
+                let minDiff = Math.abs(new Date(closestDecision.timestamp).getTime() - targetMs)
+
+                fetchedDecisions.forEach(d => {
+                    const diff = Math.abs(new Date(d.timestamp).getTime() - targetMs)
+                    if (diff < minDiff) {
+                        minDiff = diff
+                        closestDecision = d
+                    }
+                })
+
+                console.log('🎯 Closest decision:', closestDecision.id, 'at', closestDecision.timestamp)
+
+                // Set chart click mode with fetched decisions
+                setChartClickMode({
+                    enabled: true,
+                    timestamp: timestamp,
+                    decisions: fetchedDecisions,
+                })
+
+                // Notify parent to stop SWR polling
+                onChartClickModeChange?.(true)
+
+                // Scroll to closest decision
+                setTimeout(() => {
+                    const decisionKey = String(closestDecision.timestamp)
+                    const cardElement = decisionCardRefs.current.get(decisionKey)
+                    console.log('📍 Looking for card with key:', decisionKey, 'found:', !!cardElement)
+                    if (cardElement) {
+                        cardElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+
+                        // Highlight the card
+                        setHighlightedDecisionId(closestDecision.id ?? null)
+
+                        // Fade out after 3 seconds
+                        setTimeout(() => {
+                            setHighlightedDecisionId(null)
+                        }, 3000)
+                    }
+                }, 100)
+            }
+        } catch (err) {
+            console.error('Failed to fetch decisions around timestamp:', err)
+        }
+    }
+
+    // Clear chart click mode and resume normal SWR polling
+    const handleClearChartClickMode = () => {
+        setChartClickMode({ enabled: false })
+        setHighlightedDecisionId(null)
+        // Notify parent to resume SWR polling
+        onChartClickModeChange?.(false)
     }
 
     // 平仓操作
@@ -569,6 +658,7 @@ export function TraderDashboardPage({
                                     selectedTrader.exchange_id,
                                     exchanges
                                 )}
+                                onChartClick={handleChartClick}
                             />
                         </div>
 
@@ -758,45 +848,110 @@ export function TraderDashboardPage({
                                 <h2 className="text-xl font-bold text-nofx-text-main">
                                     {t('recentDecisions', language)}
                                 </h2>
-                                {decisions && decisions.length > 0 && (
+                                {!chartClickMode.enabled && decisions && decisions.length > 0 && (
                                     <div className="text-xs text-nofx-text-muted">
                                         {t('lastCycles', language, { count: decisions.length })}
                                     </div>
                                 )}
                             </div>
-                            {/* Limit Selector */}
-                            <select
-                                value={decisionsLimit}
-                                onChange={(e) => onDecisionsLimitChange(Number(e.target.value))}
-                                className="px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer transition-all bg-black/40 text-nofx-text-main border border-white/10 hover:border-nofx-accent focus:outline-none"
-                            >
-                                <option value={5}>5</option>
-                                <option value={10}>10</option>
-                                <option value={20}>20</option>
-                                <option value={50}>50</option>
-                                <option value={100}>100</option>
-                            </select>
+                            {/* Chart Click Mode Filter Badge */}
+                            {chartClickMode.enabled && (
+                                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-nofx-gold/15 border border-nofx-gold/30">
+                                    <span className="text-xs font-medium text-nofx-gold">
+                                        📊 {language === 'zh' ? '时间点筛选' : 'Time Filter'}
+                                    </span>
+                                    <button
+                                        onClick={handleClearChartClickMode}
+                                        className="text-nofx-gold hover:text-white transition-colors"
+                                        title={language === 'zh' ? '清除筛选' : 'Clear Filter'}
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+                            )}
+                            {/* Limit Selector - hide when in chart click mode */}
+                            {!chartClickMode.enabled && (
+                                <select
+                                    value={decisionsLimit}
+                                    onChange={(e) => onDecisionsLimitChange(Number(e.target.value))}
+                                    className="px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer transition-all bg-black/40 text-nofx-text-main border border-white/10 hover:border-nofx-accent focus:outline-none"
+                                >
+                                    <option value={5}>5</option>
+                                    <option value={10}>10</option>
+                                    <option value={20}>20</option>
+                                    <option value={50}>50</option>
+                                    <option value={100}>100</option>
+                                </select>
+                            )}
                         </div>
 
                         {/* Decisions List - Scrollable */}
                         <div
+                            ref={decisionListRef}
                             className="space-y-4 overflow-y-auto pr-2 custom-scrollbar"
                             style={{ maxHeight: 'calc(100vh - 280px)' }}
                         >
-                            {decisions && decisions.length > 0 ? (
-                                decisions.map((decision, i) => (
-                                    <DecisionCard key={i} decision={decision} language={language} onSymbolClick={handleSymbolClick} />
-                                ))
+                            {chartClickMode.enabled ? (
+                                // Show filtered decisions from chart click
+                                chartClickMode.decisions && chartClickMode.decisions.length > 0 ? (
+                                    chartClickMode.decisions.map((decision, i) => {
+                                        const decisionKey = String(decision.timestamp || decision.cycle_number)
+                                        return (
+                                            <div
+                                                key={i}
+                                                ref={(el) => {
+                                                    if (el) decisionCardRefs.current.set(decisionKey, el)
+                                                }}
+                                            >
+                                                <DecisionCard
+                                                    decision={decision}
+                                                    language={language}
+                                                    onSymbolClick={handleSymbolClick}
+                                                    isHighlighted={highlightedDecisionId === decision.id}
+                                                />
+                                            </div>
+                                        )
+                                    })
+                                ) : (
+                                    <div className="py-16 text-center text-nofx-text-muted opacity-60">
+                                        <div className="text-6xl mb-4 opacity-30 grayscale">📊</div>
+                                        <div className="text-lg font-semibold mb-2 text-nofx-text-main">
+                                            {language === 'zh' ? '该时间点暂无决策' : 'No decisions at this time'}
+                                        </div>
+                                    </div>
+                                )
                             ) : (
-                                <div className="py-16 text-center text-nofx-text-muted opacity-60">
-                                    <div className="text-6xl mb-4 opacity-30 grayscale">🧠</div>
-                                    <div className="text-lg font-semibold mb-2 text-nofx-text-main">
-                                        {t('noDecisionsYet', language)}
+                                // Show normal decisions from SWR
+                                decisions && decisions.length > 0 ? (
+                                    decisions.map((decision, i) => {
+                                        const decisionKey = String(decision.timestamp || decision.cycle_number)
+                                        return (
+                                            <div
+                                                key={i}
+                                                ref={(el) => {
+                                                    if (el) decisionCardRefs.current.set(decisionKey, el)
+                                                }}
+                                            >
+                                                <DecisionCard
+                                                    decision={decision}
+                                                    language={language}
+                                                    onSymbolClick={handleSymbolClick}
+                                                    isHighlighted={highlightedDecisionId === decision.id}
+                                                />
+                                            </div>
+                                        )
+                                    })
+                                ) : (
+                                    <div className="py-16 text-center text-nofx-text-muted opacity-60">
+                                        <div className="text-6xl mb-4 opacity-30 grayscale">🧠</div>
+                                        <div className="text-lg font-semibold mb-2 text-nofx-text-main">
+                                            {t('noDecisionsYet', language)}
+                                        </div>
+                                        <div className="text-sm">
+                                            {t('aiDecisionsWillAppear', language)}
+                                        </div>
                                     </div>
-                                    <div className="text-sm">
-                                        {t('aiDecisionsWillAppear', language)}
-                                    </div>
-                                </div>
+                                )
                             )}
                         </div>
                     </div>

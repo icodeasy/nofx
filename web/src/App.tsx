@@ -140,6 +140,7 @@ function App() {
   }
   const [lastUpdate, setLastUpdate] = useState<string>('--:--:--')
   const [decisionsLimit, setDecisionsLimit] = useState<number>(5)
+  const [chartClickModeEnabled, setChartClickModeEnabled] = useState<boolean>(false)
 
   // 监听URL变化，同步页面状态
   useEffect(() => {
@@ -271,7 +272,7 @@ function App() {
   )
 
   const { data: decisions } = useSWR<DecisionRecord[]>(
-    currentPage === 'trader' && selectedTraderId
+    currentPage === 'trader' && selectedTraderId && !chartClickModeEnabled
       ? `decisions/latest-${selectedTraderId}-${decisionsLimit}`
       : null,
     () => api.getLatestDecisions(selectedTraderId, decisionsLimit),
@@ -516,6 +517,7 @@ function App() {
                   setRoute('/traders')
                   setCurrentPage('traders')
                 }}
+                onChartClickModeChange={setChartClickModeEnabled}
                 exchanges={exchanges}
               />
             )}

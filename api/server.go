@@ -217,6 +217,7 @@ func (s *Server) setupRoutes() {
 			protected.GET("/open-orders", s.handleOpenOrders)      // Open orders from exchange (pending SL/TP)
 			protected.GET("/decisions", s.handleDecisions)
 			protected.GET("/decisions/latest", s.handleLatestDecisions)
+			protected.GET("/decisions/around", s.handleDecisionsAroundTimestamp) // Decisions around timestamp
 			protected.GET("/statistics", s.handleStatistics)
 
 			// Backtest routes
@@ -2854,6 +2855,71 @@ func (s *Server) handleLatestDecisions(c *gin.Context) {
 	// GetLatestRecords returns oldest to newest (for charts), here we need newest to oldest
 	for i, j := 0, len(records)-1; i < j; i, j = i+1, j-1 {
 		records[i], records[j] = records[j], records[i]
+	}
+
+	c.JSON(http.StatusOK, records)
+}
+
+// handleDecisionsAroundTimestamp gets decisions around a specific timestamp
+// Query params: trader_id, timestamp (Unix seconds), before (default 5), after (default 5)
+func (s *Server) handleDecisionsAroundTimestamp(c *gin.Context) {
+	_, traderID, err := s.getTraderFromQuery(c)
+	if err != nil {
+		SafeBadRequest(c, "Invalid trader ID")
+		return
+	}
+
+	trader, err := s.traderManager.GetTrader(traderID)
+	if err != nil {
+		SafeNotFound(c, "Trader")
+		return
+	}
+
+	// Get timestamp from query parameter (required)
+	timestampStr := c.Query("timestamp")
+	if timestampStr == "" {
+		SafeBadRequest(c, "timestamp parameter is required")
+		return
+	}
+
+	// Parse timestamp (Unix seconds)
+	timestampInt, err := strconv.ParseInt(timestampStr, 10, 64)
+	if err != nil {
+		SafeBadRequest(c, "Invalid timestamp format (must be Unix seconds)")
+		return
+	}
+	targetTime := time.Unix(timestampInt, 0)
+
+	// Get before and after counts (default 5 each)
+	beforeCount := 5
+	if beforeStr := c.Query("before"); beforeStr != "" {
+		if parsedBefore, err := strconv.Atoi(beforeStr); err == nil && parsedBefore > 0 {
+			beforeCount = parsedBefore
+			if beforeCount > 50 {
+				beforeCount = 50 // Max 50 to prevent abuse
+			}
+		}
+	}
+
+	afterCount := 5
+	if afterStr := c.Query("after"); afterStr != "" {
+		if parsedAfter, err := strconv.Atoi(afterStr); err == nil && parsedAfter > 0 {
+			afterCount = parsedAfter
+			if afterCount > 50 {
+				afterCount = 50 // Max 50 to prevent abuse
+			}
+		}
+	}
+
+	records, err := trader.GetStore().Decision().GetRecordsAroundTimestamp(
+		trader.GetID(),
+		targetTime,
+		beforeCount,
+		afterCount,
+	)
+	if err != nil {
+		SafeInternalError(c, "Get decisions around timestamp", err)
+		return
 	}
 
 	c.JSON(http.StatusOK, records)

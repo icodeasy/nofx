@@ -7,6 +7,7 @@ interface DecisionCardProps {
   decision: DecisionRecord
   language: Language
   onSymbolClick?: (symbol: string) => void
+  isHighlighted?: boolean // For temporary highlight effect when navigated from chart
 }
 
 // Action type configuration
@@ -218,7 +219,7 @@ function ActionCard({ action, language, onSymbolClick }: { action: DecisionActio
   )
 }
 
-export function DecisionCard({ decision, language, onSymbolClick }: DecisionCardProps) {
+export function DecisionCard({ decision, language, onSymbolClick, isHighlighted }: DecisionCardProps) {
   const [showSystemPrompt, setShowSystemPrompt] = useState(false)
   const [showInputPrompt, setShowInputPrompt] = useState(false)
   const [showCoT, setShowCoT] = useState(false)
@@ -250,9 +251,11 @@ export function DecisionCard({ decision, language, onSymbolClick }: DecisionCard
     <div
       className="rounded-xl p-5 transition-all duration-300 hover:translate-y-[-2px]"
       style={{
-        border: '1px solid #2B3139',
+        border: isHighlighted ? '2px solid #F0B90B' : '1px solid #2B3139',
         background: 'linear-gradient(180deg, #1E2329 0%, #181C21 100%)',
-        boxShadow: '0 4px 16px rgba(0, 0, 0, 0.3)',
+        boxShadow: isHighlighted
+          ? '0 0 20px rgba(240, 185, 11, 0.3), 0 4px 16px rgba(0, 0, 0, 0.3)'
+          : '0 4px 16px rgba(0, 0, 0, 0.3)',
       }}
     >
       {/* Header */}

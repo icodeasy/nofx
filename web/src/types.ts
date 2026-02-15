@@ -67,6 +67,7 @@ export interface AccountSnapshot {
 }
 
 export interface DecisionRecord {
+  id?: number // Database ID (optional for backward compatibility)
   timestamp: string
   cycle_number: number
   system_prompt: string

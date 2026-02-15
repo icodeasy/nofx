@@ -52,6 +52,7 @@ interface AdvancedChartProps {
   height?: number
   exchange?: string // 交易所类型：binance, bybit, okx, bitget, hyperliquid, aster, lighter
   onSymbolChange?: (symbol: string) => void // 币种切换回调
+  onChartClick?: (timestamp: number) => void // 图表点击回调（返回Unix时间戳，单位：秒）
 }
 
 // 指标配置
@@ -102,8 +103,10 @@ export function AdvancedChart({
   height = 550,
   exchange = 'binance', // 默认使用 binance
   onSymbolChange: _onSymbolChange, // Available for future use
+  onChartClick, // Chart click callback
 }: AdvancedChartProps) {
   void _onSymbolChange // Prevent unused warning
+  void onChartClick // Will be used below
   const { language } = useLanguage()
   const quoteUnit = getQuoteUnit(exchange)
   const baseUnit = getBaseUnit(exchange, symbol)
@@ -493,6 +496,20 @@ export function AdvancedChart({
         y: param.point.y,
       })
     })
+
+    // 监听图表点击事件，用于导航到决策记录
+    if (onChartClick) {
+      chart.subscribeClick((param) => {
+        if (param.time) {
+          // Convert time to Unix timestamp in seconds
+          const timestamp = typeof param.time === 'number'
+            ? param.time
+            : Math.floor(new Date(param.time as string).getTime() / 1000)
+          console.log('📊 Chart clicked at timestamp:', timestamp, 'Date:', new Date(timestamp * 1000).toLocaleString())
+          onChartClick(timestamp)
+        }
+      })
+    }
 
     return () => {
       resizeObserver.disconnect()

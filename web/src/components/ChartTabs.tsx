@@ -14,6 +14,7 @@ interface ChartTabsProps {
   selectedSymbol?: string // 从外部选择的币种
   updateKey?: number // 强制更新的 key
   exchangeId?: string // 交易所ID
+  onChartClick?: (timestamp: number) => void // 图表点击回调
 }
 
 type ChartTab = 'equity' | 'kline' | 'news'
@@ -54,7 +55,7 @@ function getMarketTypeFromExchange(exchangeId: string | undefined): MarketType {
   return 'crypto'
 }
 
-export function ChartTabs({ traderId, selectedSymbol, updateKey, exchangeId }: ChartTabsProps) {
+export function ChartTabs({ traderId, selectedSymbol, updateKey, exchangeId, onChartClick }: ChartTabsProps) {
   const { language } = useLanguage()
   const [activeTab, setActiveTab] = useState<ChartTab>('equity')
   const [chartSymbol, setChartSymbol] = useState<string>('BTC')
@@ -333,6 +334,7 @@ export function ChartTabs({ traderId, selectedSymbol, updateKey, exchangeId }: C
                 // Dynamic auto-sizing via ResizeObserver
                 exchange={currentExchange}
                 onSymbolChange={setChartSymbol}
+                onChartClick={onChartClick}
               />
             </motion.div>
           )}
