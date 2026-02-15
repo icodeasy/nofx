@@ -321,10 +321,14 @@ export function StrategyStudioPage() {
   const handleRateStrategy = async (id: string, rating: 'good' | 'bad') => {
     if (!token) return
     try {
+      // Find the current strategy to check if we need to toggle off
+      const currentStrategy = strategies.find(s => s.id === id)
+      const newRating = currentStrategy?.rating === rating ? '' : rating
+
       const response = await fetch(`${API_BASE}/strategies/${id}/rate`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rating })
+        body: JSON.stringify({ rating: newRating })
       })
       if (!response.ok) throw new Error('Failed to rate strategy')
       await fetchStrategies()

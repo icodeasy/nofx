@@ -307,7 +307,7 @@ func (s *Server) handleRateStrategy(c *gin.Context) {
 	}
 
 	var req struct {
-		Rating string `json:"rating" binding:"required"` // "good", "bad", or "" (neutral)
+		Rating string `json:"rating"` // "good", "bad", or "" (neutral)
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
