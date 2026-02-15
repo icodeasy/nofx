@@ -1201,12 +1201,11 @@ func (e *StrategyEngine) BuildSystemPrompt(accountEquity float64, variant string
 
 	sb.WriteString("### Close Position Requirements\n")
 	sb.WriteString(fmt.Sprintf("- Min confidence to close: %d\n", riskControl.MinConfidence))
-	sb.WriteString("- Close decisions should consider:\n")
-	sb.WriteString("  • Current PnL (profit/loss)\n")
-	sb.WriteString("  • Market conditions\n")
-	sb.WriteString("  • Exit signals\n")
-	sb.WriteString("  • Stop-loss/take-profit prices\n")
-	sb.WriteString("- IMPORTANT: Do NOT evaluate the original risk-reward ratio when closing\n")
+	sb.WriteString("- Close decisions must follow this priority order:\n")
+	sb.WriteString("  1. Stop-loss/take-profit prices\n")
+	sb.WriteString("  2. Current PnL condition\n")
+	sb.WriteString("  3. Significant market condition changes\n")
+	sb.WriteString("- IMPORTANT: Do NOT evaluate the original risk-reward ratio when closing\n\n")
 
 	// 4. Position Sizing Rules
 	sb.WriteString("## Position Sizing Rules\n")
