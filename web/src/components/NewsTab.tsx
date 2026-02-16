@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Newspaper, ExternalLink, Clock, Globe, RefreshCw } from 'lucide-react'
+import { Newspaper, ExternalLink, Clock, Globe, RefreshCw, ThumbsUp, ThumbsDown } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useLanguage } from '../contexts/LanguageContext'
+import { notify } from '../lib/notify'
 
 const API_BASE = import.meta.env.VITE_API_BASE || ''
 
@@ -12,6 +13,8 @@ interface NewsItem {
   url: string
   published_at: string
   snippet: string
+  good_count: number
+  bad_count: number
 }
 
 interface NewsResponse {
@@ -139,6 +142,44 @@ export function NewsTab() {
     }
   }
 
+  const handleFeedback = async (newsId: string, type: 'good' | 'bad', event: React.MouseEvent) => {
+    event.preventDefault() // Prevent opening the news link
+    event.stopPropagation()
+
+    try {
+      const response = await fetch(`${API_BASE}/news/${newsId}/feedback`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ type }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to submit feedback')
+      }
+
+      // Update the local state to reflect the feedback
+      setNewsItems((prev) =>
+        prev.map((item) => {
+          if (item.id === newsId) {
+            return {
+              ...item,
+              good_count: type === 'good' ? item.good_count + 1 : item.good_count,
+              bad_count: type === 'bad' ? item.bad_count + 1 : item.bad_count,
+            }
+          }
+          return item
+        })
+      )
+
+      notify.success(type === 'good' ? 'Thanks for the positive feedback!' : 'Thanks for your feedback!')
+    } catch (error) {
+      console.error('Error submitting feedback:', error)
+      notify.error('Failed to submit feedback')
+    }
+  }
+
   return (
     <div className="h-full w-full flex flex-col">
       {/* Header */}
@@ -212,7 +253,27 @@ export function NewsTab() {
                       </span>
                     </div>
                   </div>
-                  <ExternalLink className="w-4 h-4 text-nofx-text-muted/30 group-hover:text-nofx-gold transition-colors flex-shrink-0 mt-1" />
+                  <div className="flex flex-col items-end gap-2 flex-shrink-0 mt-1">
+                    <ExternalLink className="w-4 h-4 text-nofx-text-muted/30 group-hover:text-nofx-gold transition-colors" />
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={(e) => handleFeedback(item.id, 'good', e)}
+                        className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-green-500/70 hover:text-green-400 hover:bg-green-500/10 transition-all"
+                        title="Good news"
+                      >
+                        <ThumbsUp className="w-3 h-3" />
+                        <span>{item.good_count || 0}</span>
+                      </button>
+                      <button
+                        onClick={(e) => handleFeedback(item.id, 'bad', e)}
+                        className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-red-500/70 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                        title="Bad news"
+                      >
+                        <ThumbsDown className="w-3 h-3" />
+                        <span>{item.bad_count || 0}</span>
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </motion.a>
             ))}

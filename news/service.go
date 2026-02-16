@@ -299,3 +299,8 @@ func (s *Service) FetchNewsManual() error {
 func (s *Service) GetNews(limit, offset int, language string) ([]*store.NewsItem, int64, error) {
 	return s.store.News().List(limit, offset, language)
 }
+
+// SubmitFeedback submits feedback for a news item
+func (s *Service) SubmitFeedback(newsID string, feedbackType string) error {
+	return s.store.News().UpdateFeedback(newsID, feedbackType)
+}

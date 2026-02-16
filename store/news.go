@@ -15,6 +15,8 @@ type NewsItem struct {
 	PublishedAt time.Time `json:"published_at" gorm:"not null"`
 	Snippet     string    `json:"snippet"`
 	Language    string    `json:"language" gorm:"not null;default:'en'"` // 'en' for English, 'zh' for Chinese
+	GoodCount   int       `json:"good_count" gorm:"not null;default:0"`  // Number of "good" feedbacks
+	BadCount    int       `json:"bad_count" gorm:"not null;default:0"`   // Number of "bad" feedbacks
 	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
@@ -121,4 +123,22 @@ func (ns *NewsStore) GetLastFetchTime() (*time.Time, error) {
 		return nil, err
 	}
 	return &item.PublishedAt, nil
+}
+
+// UpdateFeedback updates the good/bad feedback count for a news item
+func (ns *NewsStore) UpdateFeedback(newsID string, feedbackType string) error {
+	var field string
+	if feedbackType == "good" {
+		field = "good_count"
+	} else if feedbackType == "bad" {
+		field = "bad_count"
+	} else {
+		return gorm.ErrInvalidValue
+	}
+
+	// Increment the appropriate counter
+	return ns.db.Model(&NewsItem{}).
+		Where("id = ?", newsID).
+		UpdateColumn(field, gorm.Expr(field+" + ?", 1)).
+		Error
 }

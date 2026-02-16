@@ -139,6 +139,7 @@ func (s *Server) setupRoutes() {
 		// News (no authentication required - public news feed)
 		api.GET("/news", s.newsHandler.HandleGetNews)
 		api.POST("/news/refresh", s.newsHandler.HandleRefreshNews)
+		api.POST("/news/:id/feedback", s.newsHandler.HandleNewsFeedback)
 
 		// Authentication related routes (no authentication required)
 		api.POST("/register", s.handleRegister)

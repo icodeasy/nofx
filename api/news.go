@@ -40,6 +40,8 @@ type NewsItemResponse struct {
 	URL         string `json:"url"`
 	PublishedAt string `json:"published_at"`
 	Snippet     string `json:"snippet"`
+	GoodCount   int    `json:"good_count"`
+	BadCount    int    `json:"bad_count"`
 }
 
 // HandleGetNews handles GET /api/news - retrieve paginated news
@@ -82,6 +84,8 @@ func (h *NewsHandler) HandleGetNews(c *gin.Context) {
 			URL:         item.URL,
 			PublishedAt: item.PublishedAt.Format("2006-01-02T15:04:05Z"),
 			Snippet:     item.Snippet,
+			GoodCount:   item.GoodCount,
+			BadCount:    item.BadCount,
 		})
 	}
 
@@ -99,5 +103,32 @@ func (h *NewsHandler) HandleRefreshNews(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "News refreshed successfully",
+	})
+}
+
+// HandleNewsFeedback handles POST /api/news/:id/feedback - submit feedback for a news item
+func (h *NewsHandler) HandleNewsFeedback(c *gin.Context) {
+	newsID := c.Param("id")
+
+	var req struct {
+		Type string `json:"type" binding:"required,oneof=good bad"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid feedback type. Must be 'good' or 'bad'",
+		})
+		return
+	}
+
+	if err := h.newsService.SubmitFeedback(newsID, req.Type); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to submit feedback",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Feedback submitted successfully",
 	})
 }
