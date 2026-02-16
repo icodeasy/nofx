@@ -8,14 +8,15 @@ import (
 
 // NewsItem represents a news article from Google News
 type NewsItem struct {
-	ID        string    `json:"id" gorm:"primaryKey"`
-	Title     string    `json:"title" gorm:"not null"`
-	Source    string    `json:"source" gorm:"not null"`
-	URL       string    `json:"url" gorm:"not null;unique"`
+	ID          string    `json:"id" gorm:"primaryKey"`
+	Title       string    `json:"title" gorm:"not null"`
+	Source      string    `json:"source" gorm:"not null"`
+	URL         string    `json:"url" gorm:"not null;unique"`
 	PublishedAt time.Time `json:"published_at" gorm:"not null"`
-	Snippet   string    `json:"snippet"`
-	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	Snippet     string    `json:"snippet"`
+	Language    string    `json:"language" gorm:"not null;default:'en'"` // 'en' for English, 'zh' for Chinese
+	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 // NewsStore handles news-related database operations
@@ -52,17 +53,31 @@ func (ns *NewsStore) GetByID(id string) (*NewsItem, error) {
 }
 
 // List retrieves news items with pagination (ordered by published_at DESC)
-func (ns *NewsStore) List(limit, offset int) ([]*NewsItem, int64, error) {
+func (ns *NewsStore) List(limit, offset int, language string) ([]*NewsItem, int64, error) {
 	var items []*NewsItem
 	var total int64
 
+	query := ns.db.Model(&NewsItem{})
+
+	// Filter by language if specified
+	if language != "" && language != "all" {
+		query = query.Where("language = ?", language)
+	}
+
 	// Count total items
-	if err := ns.db.Model(&NewsItem{}).Count(&total).Error; err != nil {
+	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
 	// Get paginated items, ordered by published_at DESC (newest first)
-	err := ns.db.Order("published_at DESC").
+	err := ns.db.Model(&NewsItem{}).
+		Where(func(tx *gorm.DB) *gorm.DB {
+			if language != "" && language != "all" {
+				return tx.Where("language = ?", language)
+			}
+			return tx
+		}(ns.db)).
+		Order("published_at DESC").
 		Limit(limit).
 		Offset(offset).
 		Find(&items).Error

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Newspaper, ExternalLink, Clock, Globe, RefreshCw } from 'lucide-react'
 import { motion } from 'framer-motion'
+import { useLanguage } from '../contexts/LanguageContext'
 
 const API_BASE = import.meta.env.VITE_API_BASE || ''
 
@@ -19,6 +20,7 @@ interface NewsResponse {
 }
 
 export function NewsTab() {
+  const { language } = useLanguage()
   const [newsItems, setNewsItems] = useState<NewsItem[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
@@ -36,8 +38,11 @@ export function NewsTab() {
         setIsLoading(true)
       }
 
+      // Map language code: 'zh' -> 'zh', 'en' -> 'en'
+      const langParam = language === 'zh' ? 'zh' : 'en'
+
       const response = await fetch(
-        `${API_BASE}/news?limit=${limit}&offset=${currentOffset}`
+        `${API_BASE}/news?limit=${limit}&offset=${currentOffset}&language=${langParam}`
       )
 
       if (!response.ok) {
@@ -60,7 +65,7 @@ export function NewsTab() {
       setIsLoading(false)
       setIsLoadingMore(false)
     }
-  }, [limit])
+  }, [limit, language])
 
   useEffect(() => {
     fetchNews(0)

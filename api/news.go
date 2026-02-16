@@ -47,6 +47,7 @@ func (h *NewsHandler) HandleGetNews(c *gin.Context) {
 	// Parse query parameters with defaults
 	limitStr := c.DefaultQuery("limit", "20")
 	offsetStr := c.DefaultQuery("offset", "0")
+	language := c.DefaultQuery("language", "all") // "en", "zh", or "all"
 
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil || limit < 1 || limit > 100 {
@@ -59,7 +60,7 @@ func (h *NewsHandler) HandleGetNews(c *gin.Context) {
 	}
 
 	// Fetch news from service
-	items, total, err := h.newsService.GetNews(limit, offset)
+	items, total, err := h.newsService.GetNews(limit, offset, language)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to fetch news",

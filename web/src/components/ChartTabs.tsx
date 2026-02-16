@@ -1,10 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { EquityChart } from './EquityChart'
 import { AdvancedChart } from './AdvancedChart'
-import { NewsTab } from './NewsTab'
 import { useLanguage } from '../contexts/LanguageContext'
 import { t } from '../i18n/translations'
-import { BarChart3, CandlestickChart, ChevronDown, Search, Newspaper } from 'lucide-react'
+import { BarChart3, CandlestickChart, ChevronDown, Search } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 const API_BASE = import.meta.env.VITE_API_BASE || ''
@@ -17,7 +16,7 @@ interface ChartTabsProps {
   onChartClick?: (timestamp: number) => void // 图表点击回调
 }
 
-type ChartTab = 'equity' | 'kline' | 'news'
+type ChartTab = 'equity' | 'kline'
 type Interval = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d'
 type MarketType = 'hyperliquid' | 'crypto' | 'stocks' | 'forex' | 'metals'
 
@@ -186,18 +185,6 @@ export function ChartTabs({ traderId, selectedSymbol, updateKey, exchangeId, onC
             <span className="md:hidden">Kline</span>
           </button>
 
-          <button
-            onClick={() => setActiveTab('news')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium transition-all ${activeTab === 'news'
-              ? 'bg-nofx-gold/10 text-nofx-gold border border-nofx-gold/20 shadow-[0_0_10px_rgba(240,185,11,0.1)]'
-              : 'text-nofx-text-muted hover:text-nofx-text-main hover:bg-white/5'
-              }`}
-          >
-            <Newspaper className="w-3.5 h-3.5" />
-            <span className="hidden md:inline">News</span>
-            <span className="md:hidden">News</span>
-          </button>
-
           {/* Market Type Pills - HIDDEN (not useful currently) */}
         </div>
 
@@ -306,17 +293,6 @@ export function ChartTabs({ traderId, selectedSymbol, updateKey, exchangeId, onC
               className="h-full w-full absolute inset-0"
             >
               <EquityChart traderId={traderId} embedded />
-            </motion.div>
-          ) : activeTab === 'news' ? (
-            <motion.div
-              key="news"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="h-full w-full absolute inset-0"
-            >
-              <NewsTab />
             </motion.div>
           ) : (
             <motion.div

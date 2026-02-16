@@ -37,6 +37,7 @@ type GoogleNewsResult struct {
 	URL         string
 	PublishedAt time.Time
 	Snippet     string
+	Language    string // 'en' for English, 'zh' for Chinese
 }
 
 // StartScheduler starts the daily news fetcher at 1 AM
@@ -94,15 +95,25 @@ func (s *Service) checkAndFetch() {
 
 // FetchAndStore fetches news from Google News and stores it in the database
 func (s *Service) FetchAndStore() error {
-	// Google News RSS feed URL for blockchain news (last 24 hours)
-	newsURL := "https://news.google.com/rss/search?q=blockchain%20when:1d&hl=en-US&gl=US&ceid=US:en"
-
-	results, err := s.parseGoogleNewsRSS(newsURL)
-	if err != nil {
-		return fmt.Errorf("failed to parse Google News RSS: %w", err)
+	// Fetch news from both English and Chinese sources
+	newsURLs := map[string]string{
+		"en": "https://news.google.com/rss/search?q=blockchain%20when%3A1d&hl=en-US&gl=US&ceid=US:en",
+		"zh": "https://news.google.com/rss/search?q=%E5%8C%BA%E5%9D%97%E9%93%BE%20when%3A1d&hl=zh-CN&gl=CN&ceid=CN:zh-Hans",
 	}
 
-	if len(results) == 0 {
+	var allResults []GoogleNewsResult
+	for lang, url := range newsURLs {
+		logger.Infof("📰 Fetching %s news...", lang)
+		results, err := s.parseGoogleNewsRSS(url, lang)
+		if err != nil {
+			logger.Errorf("⚠️ Failed to parse %s Google News RSS: %v", lang, err)
+			continue
+		}
+		allResults = append(allResults, results...)
+		logger.Infof("📰 Fetched %d %s articles", len(results), lang)
+	}
+
+	if len(allResults) == 0 {
 		logger.Info("📰 No new articles found")
 		return nil
 	}
@@ -112,7 +123,7 @@ func (s *Service) FetchAndStore() error {
 	addedCount := 0
 	skippedCount := 0
 
-	for _, result := range results {
+	for _, result := range allResults {
 		// Check if URL already exists
 		exists, err := s.store.News().ExistsByURL(result.URL)
 		if err != nil {
@@ -133,6 +144,7 @@ func (s *Service) FetchAndStore() error {
 			URL:         result.URL,
 			PublishedAt: result.PublishedAt,
 			Snippet:     result.Snippet,
+			Language:    result.Language,
 		}
 
 		newItems = append(newItems, item)
@@ -160,7 +172,7 @@ func (s *Service) FetchAndStore() error {
 }
 
 // parseGoogleNewsRSS parses the Google News RSS feed and returns news items
-func (s *Service) parseGoogleNewsRSS(feedURL string) ([]GoogleNewsResult, error) {
+func (s *Service) parseGoogleNewsRSS(feedURL string, lang string) ([]GoogleNewsResult, error) {
 	resp, err := s.httpClient.Get(feedURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch RSS feed: %w", err)
@@ -226,6 +238,7 @@ func (s *Service) parseGoogleNewsRSS(feedURL string) ([]GoogleNewsResult, error)
 			URL:         strings.TrimSpace(item.Link),
 			PublishedAt: publishedAt,
 			Snippet:     description,
+			Language:    lang,
 		}
 
 		if result.URL != "" {
@@ -283,6 +296,6 @@ func (s *Service) FetchNewsManual() error {
 }
 
 // GetNews retrieves paginated news from the database
-func (s *Service) GetNews(limit, offset int) ([]*store.NewsItem, int64, error) {
-	return s.store.News().List(limit, offset)
+func (s *Service) GetNews(limit, offset int, language string) ([]*store.NewsItem, int64, error) {
+	return s.store.News().List(limit, offset, language)
 }
