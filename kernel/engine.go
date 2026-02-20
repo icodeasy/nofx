@@ -2215,13 +2215,16 @@ func validateDecision(d *Decision, ctx *Context, btcEthLeverage, altcoinLeverage
 			return fmt.Errorf("stop loss and take profit must be greater than 0")
 		}
 
-		if d.Action == "open_long" {
-			if d.StopLoss >= d.TakeProfit {
-				return fmt.Errorf("for long positions, stop loss price must be less than take profit price")
-			}
-		} else {
-			if d.StopLoss <= d.TakeProfit {
-				return fmt.Errorf("for short positions, stop loss price must be greater than take profit price")
+		// Get current market price for price reasonableness validation
+		currentPrice := 0.0
+		if freshData, err := market.Get(d.Symbol); err == nil && freshData.CurrentPrice > 0 {
+			currentPrice = freshData.CurrentPrice
+		}
+
+		// Validate stop loss and take profit prices (includes relationship check and reasonableness)
+		if currentPrice > 0 {
+			if err := ValidateStopLossTakeProfitPrices(d.Symbol, d.Action, currentPrice, d.StopLoss, d.TakeProfit); err != nil {
+				return err
 			}
 		}
 
@@ -2234,6 +2237,78 @@ func validateDecision(d *Decision, ctx *Context, btcEthLeverage, altcoinLeverage
 			return err
 		}
 	}
+
+	return nil
+}
+
+// ValidateStopLossTakeProfitPrices validates that stop loss and take profit prices are reasonable
+// relative to the current market price and that their relationship is correct for the action type
+func ValidateStopLossTakeProfitPrices(symbol, action string, currentPrice, stopLoss, takeProfit float64) error {
+	const (
+		maxStopLossPercent   = 20.0 // Maximum 20% stop loss from current price
+		maxTakeProfitPercent = 50.0 // Maximum 50% take profit from current price
+		minStopLossPercent   = 0.5  // Minimum 0.5% stop loss from current price
+		minTakeProfitPercent = 1.0  // Minimum 1% take profit from current price
+	)
+
+	var stopLossPercent, takeProfitPercent float64
+
+	if action == "open_long" {
+		// For long: stop loss should be below current price, take profit above
+		if stopLoss >= currentPrice {
+			return fmt.Errorf("long position stop loss (%.6f) must be below current price (%.6f)", stopLoss, currentPrice)
+		}
+		if takeProfit <= currentPrice {
+			return fmt.Errorf("long position take profit (%.6f) must be above current price (%.6f)", takeProfit, currentPrice)
+		}
+
+		// Check SL vs TP relationship for long
+		if stopLoss >= takeProfit {
+			return fmt.Errorf("for long positions, stop loss price (%.6f) must be less than take profit price (%.6f)", stopLoss, takeProfit)
+		}
+
+		stopLossPercent = (currentPrice - stopLoss) / currentPrice * 100
+		takeProfitPercent = (takeProfit - currentPrice) / currentPrice * 100
+	} else { // open_short
+		// For short: stop loss should be above current price, take profit below
+		if stopLoss <= currentPrice {
+			return fmt.Errorf("short position stop loss (%.6f) must be above current price (%.6f)", stopLoss, currentPrice)
+		}
+		if takeProfit >= currentPrice {
+			return fmt.Errorf("short position take profit (%.6f) must be below current price (%.6f)", takeProfit, currentPrice)
+		}
+
+		// Check SL vs TP relationship for short
+		if stopLoss <= takeProfit {
+			return fmt.Errorf("for short positions, stop loss price (%.6f) must be greater than take profit price (%.6f)", stopLoss, takeProfit)
+		}
+
+		stopLossPercent = (stopLoss - currentPrice) / currentPrice * 100
+		takeProfitPercent = (currentPrice - takeProfit) / currentPrice * 100
+	}
+
+	// Validate stop loss is within reasonable range
+	if stopLossPercent < minStopLossPercent {
+		return fmt.Errorf("stop loss (%.6f) is only %.2f%% from current price (%.6f), minimum is %.1f%% - too tight for market volatility",
+			stopLoss, stopLossPercent, currentPrice, minStopLossPercent)
+	}
+	if stopLossPercent > maxStopLossPercent {
+		return fmt.Errorf("stop loss (%.6f) is %.2f%% from current price (%.6f), maximum is %.1f%% - unreasonably large risk",
+			stopLoss, stopLossPercent, currentPrice, maxStopLossPercent)
+	}
+
+	// Validate take profit is within reasonable range
+	if takeProfitPercent < minTakeProfitPercent {
+		return fmt.Errorf("take profit (%.6f) is only %.2f%% from current price (%.6f), minimum is %.1f%% - not worth trading",
+			takeProfit, takeProfitPercent, currentPrice, minTakeProfitPercent)
+	}
+	if takeProfitPercent > maxTakeProfitPercent {
+		return fmt.Errorf("take profit (%.6f) is %.2f%% from current price (%.6f), maximum is %.1f%% - unrealistic target",
+			takeProfit, takeProfitPercent, currentPrice, maxTakeProfitPercent)
+	}
+
+	logger.Infof("✅ [Price Validation] %s %s | Current: %.6f | SL: %.6f (%.2f%%) | TP: %.6f (%.2f%%) | Prices validated",
+		symbol, action, currentPrice, stopLoss, stopLossPercent, takeProfit, takeProfitPercent)
 
 	return nil
 }
