@@ -219,6 +219,7 @@ func (s *Server) setupRoutes() {
 			protected.GET("/decisions", s.handleDecisions)
 			protected.GET("/decisions/latest", s.handleLatestDecisions)
 			protected.GET("/decisions/around", s.handleDecisionsAroundTimestamp) // Decisions around timestamp
+			protected.GET("/decisions/for-position", s.handleDecisionsForPosition) // Decisions for a specific position
 			protected.GET("/statistics", s.handleStatistics)
 
 			// Backtest routes
@@ -2920,6 +2921,65 @@ func (s *Server) handleDecisionsAroundTimestamp(c *gin.Context) {
 	)
 	if err != nil {
 		SafeInternalError(c, "Get decisions around timestamp", err)
+		return
+	}
+
+	c.JSON(http.StatusOK, records)
+}
+
+// handleDecisionsForPosition gets all decisions for a specific position
+// Query params: trader_id, symbol, entry_time (Unix seconds), exit_time (Unix seconds)
+func (s *Server) handleDecisionsForPosition(c *gin.Context) {
+	_, traderID, err := s.getTraderFromQuery(c)
+	if err != nil {
+		SafeBadRequest(c, "Invalid trader ID")
+		return
+	}
+
+	trader, err := s.traderManager.GetTrader(traderID)
+	if err != nil {
+		SafeNotFound(c, "Trader")
+		return
+	}
+
+	// Get required query parameters
+	symbol := c.Query("symbol")
+	if symbol == "" {
+		SafeBadRequest(c, "symbol parameter is required")
+		return
+	}
+
+	entryTimeStr := c.Query("entry_time")
+	if entryTimeStr == "" {
+		SafeBadRequest(c, "entry_time parameter is required")
+		return
+	}
+
+	exitTimeStr := c.Query("exit_time")
+	if exitTimeStr == "" {
+		SafeBadRequest(c, "exit_time parameter is required")
+		return
+	}
+
+	// Parse timestamps (Unix seconds)
+	entryTimeInt, err := strconv.ParseInt(entryTimeStr, 10, 64)
+	if err != nil {
+		SafeBadRequest(c, "Invalid entry_time format (must be Unix seconds)")
+		return
+	}
+
+	exitTimeInt, err := strconv.ParseInt(exitTimeStr, 10, 64)
+	if err != nil {
+		SafeBadRequest(c, "Invalid exit_time format (must be Unix seconds)")
+		return
+	}
+
+	entryTime := time.Unix(entryTimeInt, 0)
+	exitTime := time.Unix(exitTimeInt, 0)
+
+	records, err := trader.GetStore().Decision().GetDecisionsForPosition(trader.GetID(), symbol, entryTime, exitTime)
+	if err != nil {
+		SafeInternalError(c, "Get decisions for position", err)
 		return
 	}
 

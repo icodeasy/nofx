@@ -395,3 +395,28 @@ func (s *DecisionStore) GetDecisionActionsForSymbol(traderID string, symbol stri
 
 	return allDecisions, nil
 }
+
+// GetDecisionsForPosition gets all decision records for a specific position
+// Returns decisions that occurred between entry_time and exit_time for the given symbol
+// The returned records include full system_prompt, input_prompt, and all decision details
+func (s *DecisionStore) GetDecisionsForPosition(traderID string, symbol string, entryTime time.Time, exitTime time.Time) ([]*DecisionRecord, error) {
+	var dbRecords []*DecisionRecordDB
+
+	// Query decision records for this trader within the time range
+	// Add buffer before entry (for context) and after exit (decision may be saved slightly later)
+	startTime := entryTime.Add(-30 * time.Minute)
+	endTime := exitTime.Add(5 * time.Minute)
+	err := s.db.Where("trader_id = ? AND timestamp >= ? AND timestamp <= ?", traderID, startTime, endTime).
+		Order("timestamp ASC").
+		Find(&dbRecords).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to query decision records for position: %w", err)
+	}
+
+	records := make([]*DecisionRecord, 0, len(dbRecords))
+	for _, db := range dbRecords {
+		records = append(records, db.toRecord())
+	}
+
+	return records, nil
+}

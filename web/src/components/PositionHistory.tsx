@@ -8,6 +8,8 @@ import type {
   TraderStats,
   SymbolStats,
   DirectionStats,
+  DecisionRecord,
+  DecisionAction,
 } from '../types'
 
 interface PositionHistoryProps {
@@ -235,8 +237,137 @@ function DirectionStatsCard({ stat, language }: { stat: DirectionStats; language
   )
 }
 
+interface PositionRowProps {
+  position: HistoricalPosition
+  traderId: string
+}
+
+// Filter decisions to only include decisions for the current position
+// Strategy: Iterate from newest to oldest, collect decisions until we encounter a close_* BEFORE the open_*
+function filterPositionDecisions(
+  decisions: DecisionRecord[],
+  symbol: string,
+  side: string
+): DecisionRecord[] {
+  const openAction = side.toLowerCase() === 'long' ? 'open_long' : 'open_short'
+  const closeAction = side.toLowerCase() === 'long' ? 'close_long' : 'close_short'
+
+  // Iterate from newest to oldest
+  // Collect all decisions with relevant actions until we find a close that came BEFORE the open
+  let foundOpen = false
+  const result: DecisionRecord[] = []
+
+  // Decisions are sorted chronologically (old to new), so iterate backwards (new to old)
+  for (let i = decisions.length - 1; i >= 0; i--) {
+    const record = decisions[i]
+    const actions = (record.decisions || []) as DecisionAction[]
+
+    // Check if this record has any relevant actions for our symbol/side
+    const hasRelevantAction = actions.some(
+      (dec) => dec.symbol === symbol && (dec.action === openAction || dec.action === closeAction)
+    )
+
+    if (!hasRelevantAction) {
+      continue
+    }
+
+    const hasOpenAction = actions.some(
+      (dec) => dec.symbol === symbol && dec.action === openAction
+    )
+
+    const hasCloseAction = actions.some(
+      (dec) => dec.symbol === symbol && dec.action === closeAction
+    )
+
+    if (!foundOpen) {
+      // We haven't found the open yet
+      if (hasOpenAction) {
+        foundOpen = true
+      }
+      // Include this record (whether it has open or close - close after open is valid)
+      result.unshift(record)
+    } else {
+      // We've found the open, now we're collecting decisions going backwards
+      // If this record has ONLY a close (no open), it's the close of a previous cycle - stop
+      if (hasCloseAction && !hasOpenAction) {
+        break
+      }
+      // Otherwise, add this record
+      result.unshift(record)
+    }
+  }
+
+  return result
+}
+
+
+// Export position decisions as a JSON file
+async function exportPositionDecisions(
+  traderId: string,
+  position: HistoricalPosition
+): Promise<void> {
+  if (!position.entry_time || !position.exit_time) {
+    alert('This position does not have valid entry/exit time data')
+    return
+  }
+
+  const entryTime = Math.floor(new Date(position.entry_time).getTime() / 1000)
+  const exitTime = Math.floor(new Date(position.exit_time).getTime() / 1000)
+
+  try {
+    const allDecisions = await api.getDecisionsForPosition(
+      traderId,
+      position.symbol,
+      entryTime,
+      exitTime
+    )
+
+    // Filter to only include the last open (and optional close) for this position
+    const filteredDecisions = filterPositionDecisions(
+      allDecisions,
+      position.symbol,
+      position.side || 'long'
+    )
+
+    // Create export data
+    const exportData = {
+      position: {
+        symbol: position.symbol,
+        side: position.side,
+        entry_price: position.entry_price,
+        exit_price: position.exit_price,
+        quantity: position.quantity,
+        entry_quantity: position.entry_quantity,
+        entry_time: position.entry_time,
+        exit_time: position.exit_time,
+        realized_pnl: position.realized_pnl,
+        fee: position.fee,
+        leverage: position.leverage,
+      },
+      decisions: filteredDecisions,
+    }
+
+    // Create and download file
+    const dataStr = JSON.stringify(exportData, null, 2)
+    const dataBlob = new Blob([dataStr], { type: 'application/json' })
+    const url = URL.createObjectURL(dataBlob)
+    const filename = `position_${position.symbol}_${position.side}_${new Date(position.exit_time).toISOString().slice(0, 10)}.json`
+
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    console.error('Failed to export position decisions:', error)
+    alert(`Failed to export: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+}
+
 // Position Row Component
-function PositionRow({ position }: { position: HistoricalPosition }) {
+function PositionRow({ position, traderId }: PositionRowProps) {
   const side = position.side || ''
   const isLong = side.toUpperCase() === 'LONG'
   const realizedPnl = position.realized_pnl || 0
@@ -335,6 +466,22 @@ function PositionRow({ position }: { position: HistoricalPosition }) {
       {/* Exit Time */}
       <td className="py-3 px-4 text-right text-xs" style={{ color: '#848E9C' }}>
         {formatDate(position.exit_time)}
+      </td>
+
+      {/* Actions */}
+      <td className="py-3 px-4 text-center">
+        <button
+          onClick={() => exportPositionDecisions(traderId, position)}
+          className="px-2 py-1 text-xs rounded transition-colors hover:opacity-80"
+          style={{
+            background: '#2B3139',
+            color: '#EAECEF',
+            border: '1px solid #3E454D',
+          }}
+          title="Export decisions for this position"
+        >
+          Export
+        </button>
       </td>
     </tr>
   )
@@ -799,11 +946,17 @@ export function PositionHistory({ traderId }: PositionHistoryProps) {
                 >
                   {t('positionHistory.closedAt', language)}
                 </th>
+                <th
+                  className="py-3 px-4 text-center text-xs font-semibold uppercase tracking-wider"
+                  style={{ color: '#848E9C' }}
+                >
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody>
               {filteredPositions.map((position) => (
-                <PositionRow key={position.id} position={position} />
+                <PositionRow key={position.id} position={position} traderId={traderId} />
               ))}
             </tbody>
           </table>

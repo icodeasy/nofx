@@ -811,4 +811,18 @@ export const api = {
     if (!result.success) throw new Error('获取历史仓位失败')
     return result.data!
   },
+
+  // Get decisions for a specific position (by symbol and time range)
+  async getDecisionsForPosition(
+    traderId: string,
+    symbol: string,
+    entryTime: number, // Unix timestamp in seconds
+    exitTime: number // Unix timestamp in seconds
+  ): Promise<DecisionRecord[]> {
+    const result = await httpClient.get<DecisionRecord[]>(
+      `${API_BASE}/decisions/for-position?trader_id=${traderId}&symbol=${symbol}&entry_time=${entryTime}&exit_time=${exitTime}`
+    )
+    if (!result.success) throw new Error('获取仓位决策记录失败')
+    return result.data!
+  },
 }
