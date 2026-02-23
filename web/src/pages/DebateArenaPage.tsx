@@ -66,6 +66,31 @@ const T: Record<string, Record<string, string>> = {
 }
 const t = (key: string, lang: string) => T[key]?.[lang] || T[key]?.en || key
 
+// Relative time formatter
+function formatRelativeTime(dateStr: string, lang: string): string {
+  const date = new Date(dateStr)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffSec = Math.floor(diffMs / 1000)
+  const diffMin = Math.floor(diffSec / 60)
+  const diffHour = Math.floor(diffMin / 60)
+  const diffDay = Math.floor(diffHour / 24)
+
+  if (lang === 'zh') {
+    if (diffSec < 60) return '刚刚'
+    if (diffMin < 60) return `${diffMin}分钟前`
+    if (diffHour < 24) return `${diffHour}小时前`
+    if (diffDay < 7) return `${diffDay}天前`
+    return date.toLocaleDateString('zh-CN')
+  } else {
+    if (diffSec < 60) return 'just now'
+    if (diffMin < 60) return `${diffMin}m ago`
+    if (diffHour < 24) return `${diffHour}h ago`
+    if (diffDay < 7) return `${diffDay}d ago`
+    return date.toLocaleDateString('en-US')
+  }
+}
+
 // Personality config
 const PERS: Record<DebatePersonality, { emoji: string; color: string; name: string; nameEn: string }> = {
   bull: { emoji: '🐂', color: '#22C55E', name: '多头', nameEn: 'Bull' },
@@ -557,7 +582,10 @@ export function DebateArenaPage() {
                 <span className={`w-2 h-2 rounded-full ${STATUS_COLOR[d.status]}`} />
                 <span className="text-sm text-nofx-text truncate flex-1">{d.name}</span>
               </div>
-              <div className="text-xs text-nofx-text-muted mt-1">{d.symbol} · R{d.current_round}/{d.max_rounds}</div>
+              <div className="text-xs text-nofx-text-muted mt-1 flex items-center justify-between">
+                <span>{d.symbol} · R{d.current_round}/{d.max_rounds}</span>
+                <span className="opacity-70">{formatRelativeTime(d.updated_at, language)}</span>
+              </div>
               {d.status === 'pending' && selectedId === d.id && (
                 <div className="flex gap-1 mt-1">
                   <button onClick={e => { e.stopPropagation(); onStart(d.id) }}
