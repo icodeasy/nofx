@@ -1218,8 +1218,7 @@ export function AITradersPage({ onTraderSelect }: AITradersPageProps) {
 
                       <button
                         onClick={() => handleEditTrader(trader.trader_id)}
-                        disabled={trader.is_running}
-                        className="px-2 md:px-3 py-1.5 md:py-2 rounded text-xs md:text-sm font-semibold transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap flex items-center gap-1"
+                        className="px-2 md:px-3 py-1.5 md:py-2 rounded text-xs md:text-sm font-semibold transition-all hover:scale-105 whitespace-nowrap flex items-center gap-1"
                         style={{
                           background: trader.is_running
                             ? 'rgba(132, 142, 156, 0.1)'
@@ -1228,7 +1227,7 @@ export function AITradersPage({ onTraderSelect }: AITradersPageProps) {
                         }}
                       >
                         <Pencil className="w-3 h-3 md:w-4 md:h-4" />
-                        {t('edit', language)}
+                        {trader.is_running ? t('detail', language) : t('edit', language)}
                       </button>
 
                       <button
@@ -1337,11 +1336,11 @@ export function AITradersPage({ onTraderSelect }: AITradersPageProps) {
         {showEditModal && editingTrader && (
           <TraderConfigModal
             isOpen={showEditModal}
-            isEditMode={true}
+            isEditMode={!editingTrader.is_running}
             traderData={editingTrader}
             availableModels={enabledModels}
             availableExchanges={enabledExchanges}
-            onSave={handleSaveEditTrader}
+            onSave={editingTrader.is_running ? undefined : handleSaveEditTrader}
             onClose={() => {
               setShowEditModal(false)
               setEditingTrader(null)

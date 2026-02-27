@@ -540,9 +540,9 @@ export function TraderConfigModal({
             onClick={onClose}
             className="px-6 py-3 bg-[#2B3139] text-[#EAECEF] rounded-lg hover:bg-[#404750] transition-all duration-200 border border-[#404750]"
           >
-            取消
+            {isEditMode ? '取消' : '关闭'}
           </button>
-          {onSave && (
+          {isEditMode && onSave && (
             <button
               onClick={handleSave}
               disabled={
@@ -553,7 +553,7 @@ export function TraderConfigModal({
               }
               className="px-8 py-3 bg-gradient-to-r from-[#F0B90B] to-[#E1A706] text-black rounded-lg hover:from-[#E1A706] hover:to-[#D4951E] transition-all duration-200 disabled:bg-[#848E9C] disabled:cursor-not-allowed font-medium shadow-lg"
             >
-              {isSaving ? '保存中...' : isEditMode ? '保存修改' : '创建交易员'}
+              {isSaving ? '保存中...' : '保存修改'}
             </button>
           )}
         </div>
