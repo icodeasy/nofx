@@ -1559,28 +1559,27 @@ func (e *StrategyEngine) formatPositionInfo(index int, pos PositionInfo, ctx *Co
 
 	// Show AI decisions for current position
 	// Find the most recent open_${side} decision and show decisions from that point
-	// This handles the case where a position was closed and reopened
+	// This handles the case where a position was closed and reopened (or closed by exchange via SL/TP)
 	if ctx.PositionDecisions != nil {
 		var activeDecisions []*PositionDecision
 		expectedOpenAction := "open_" + pos.Side
 		expectedCloseAction := "close_" + pos.Side
 
 		// Decisions are sorted latest to oldest.
-		// Strategy: collect all decisions until we find a close action, then stop.
-		// This ensures we only show decisions for the currently open position.
-		collecting := false
+		// Strategy: stop at first open action found (most recent open).
+		// This handles cases where:
+		// 1. Position was closed by exchange (SL/TP) without explicit close action
+		// 2. Position was closed and reopened
+		// We only want decisions for the current open position.
 		for _, dec := range ctx.PositionDecisions {
 			if dec.Symbol == pos.Symbol && dec.Side == pos.Side && dec.Action != "wait" {
 				if dec.Action == expectedCloseAction {
-					// Found a close - if we were collecting, we're done
-					if collecting {
-						break
-					}
-					// Otherwise skip this close and keep looking for an open
-				} else if dec.Action == expectedOpenAction || collecting {
-					// Start collecting at first open (or match action if already collecting)
+					// Found a close - stop collecting immediately
+					break
+				} else if dec.Action == expectedOpenAction {
+					// Found the most recent open - collect it and stop
 					activeDecisions = append(activeDecisions, dec)
-					collecting = true
+					break
 				}
 			}
 		}
