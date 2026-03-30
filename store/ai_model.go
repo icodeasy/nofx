@@ -64,6 +64,18 @@ func (s *AIModelStore) List(userID string) ([]*AIModel, error) {
 	return models, nil
 }
 
+// ListEnabled retrieves enabled AI models for a specific user ordered by recency.
+func (s *AIModelStore) ListEnabled(userID string) ([]*AIModel, error) {
+	var models []*AIModel
+	err := s.db.Where("user_id = ? AND enabled = ?", userID, true).
+		Order("updated_at DESC, id ASC").
+		Find(&models).Error
+	if err != nil {
+		return nil, err
+	}
+	return models, nil
+}
+
 // Get retrieves a single AI model
 func (s *AIModelStore) Get(userID, modelID string) (*AIModel, error) {
 	if modelID == "" {
@@ -121,7 +133,14 @@ func (s *AIModelStore) GetDefault(userID string) (*AIModel, error) {
 		return nil, err
 	}
 	if userID != "default" {
-		return s.firstEnabled("default")
+		// Try fallback to "default" user
+		defaultModel, defaultErr := s.firstEnabled("default")
+		if defaultErr == nil {
+			return defaultModel, nil
+		}
+		if !errors.Is(defaultErr, gorm.ErrRecordNotFound) {
+			return nil, defaultErr
+		}
 	}
 	return nil, fmt.Errorf("please configure an available AI model in the system first")
 }
@@ -135,6 +154,54 @@ func (s *AIModelStore) firstEnabled(userID string) (*AIModel, error) {
 		return nil, err
 	}
 	return &model, nil
+}
+
+// GetEnabledByProvider retrieves an enabled AI model by provider (for news analysis which always uses Gemini)
+func (s *AIModelStore) GetEnabledByProvider(userID, provider string) (*AIModel, error) {
+	var model AIModel
+	err := s.db.Where("user_id = ? AND provider = ? AND enabled = ?", userID, provider, true).
+		Order("updated_at DESC, id ASC").
+		First(&model).Error
+	if err != nil {
+		return nil, err
+	}
+	return &model, nil
+}
+
+// GetEnabledByProviderAnyUser retrieves an enabled AI model by provider for any user (system-wide fallback)
+func (s *AIModelStore) GetEnabledByProviderAnyUser(provider string) (*AIModel, error) {
+	var model AIModel
+	err := s.db.Where("provider = ? AND enabled = ?", provider, true).
+		Order("updated_at DESC, id ASC").
+		First(&model).Error
+	if err != nil {
+		return nil, err
+	}
+	return &model, nil
+}
+
+// GetAnyEnabled retrieves any enabled AI model in the system (for public endpoints without user authentication)
+func (s *AIModelStore) GetAnyEnabled() (*AIModel, error) {
+	var model AIModel
+	err := s.db.Where("enabled = ?", true).
+		Order("updated_at DESC, id ASC").
+		First(&model).Error
+	if err != nil {
+		return nil, err
+	}
+	return &model, nil
+}
+
+// ListAnyEnabled retrieves all enabled AI models in the system ordered by recency.
+func (s *AIModelStore) ListAnyEnabled() ([]*AIModel, error) {
+	var models []*AIModel
+	err := s.db.Where("enabled = ?", true).
+		Order("updated_at DESC, id ASC").
+		Find(&models).Error
+	if err != nil {
+		return nil, err
+	}
+	return models, nil
 }
 
 // Update updates AI model, creates if not exists

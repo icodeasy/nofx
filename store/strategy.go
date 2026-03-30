@@ -184,6 +184,10 @@ type IndicatorConfig struct {
 	EnablePriceRanking   bool   `json:"enable_price_ranking"`             // whether to enable price ranking data
 	PriceRankingDuration string `json:"price_ranking_duration,omitempty"` // durations: "1h" or "1h,4h,24h"
 	PriceRankingLimit    int    `json:"price_ranking_limit,omitempty"`    // number of entries per ranking (default 10)
+
+	// News analysis data (AI-generated market analysis)
+	EnableNewsAnalysis   bool   `json:"enable_news_analysis"`             // whether to enable AI news analysis
+	NewsAnalysisLanguage string `json:"news_analysis_language,omitempty"` // language: "en" or "zh" (default follows strategy language)
 }
 
 // KlineConfig K-line configuration
@@ -318,6 +322,9 @@ func GetDefaultStrategyConfig(lang string) StrategyConfig {
 			EnablePriceRanking:   true,
 			PriceRankingDuration: "1h,4h,24h",
 			PriceRankingLimit:    10,
+			// News analysis data
+			EnableNewsAnalysis:   true,
+			NewsAnalysisLanguage: "", // Empty = follow strategy language
 		},
 		RiskControl: RiskControlConfig{
 			MaxPositions:                    3,   // Max 3 coins simultaneously (CODE ENFORCED)

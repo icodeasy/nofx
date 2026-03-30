@@ -46,7 +46,7 @@ type TimeframeFetchConfig struct {
 
 // IndicatorCalculationConfig defines configuration for calculating indicators on a single timeframe
 type IndicatorCalculationConfig struct {
-	DisplayCount int     // Number of data points to include in output (for display)
+	DisplayCount int // Number of data points to include in output (for display)
 
 	// Indicator parameter configurations (full ParamConfig objects)
 	EMA  *types.EMAParamConfig  // EMA configuration
@@ -1553,10 +1553,16 @@ func findTopsAndBottoms(klines []Kline, ratio float64) ([]TopBottom, []TopBottom
 	return tops, bottoms
 }
 
+// FindTopsAndBottoms exposes the shared top/bottom detection used across the app.
+func FindTopsAndBottoms(klines []Kline, ratio float64) ([]TopBottom, []TopBottom) {
+	return findTopsAndBottoms(klines, ratio)
+}
+
 // calculateExpectationBox calculates tops/bottoms based box data (from get_expectation logic)
 // Returns BOXTop and BOXBottom arrays where:
 //   - Index 0 = second-to-last top/bottom (for stop-loss)
 //   - Index 1 = last top/bottom (for current support/resistance)
+//
 // ratio: Price movement ratio to confirm top/bottom (e.g. 1.03 = 3%)
 // lookback: Max number of periods to search (0 = unlimited, uses all klines)
 func calculateExpectationBox(klines []Kline, ratio float64, lookback int) (boxTop []float64, boxBottom []float64) {

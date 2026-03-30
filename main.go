@@ -16,6 +16,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
@@ -98,7 +99,6 @@ func main() {
 
 	// Initialize news service
 	newsService := news.NewService(st)
-	newsService.StartScheduler()
 
 	// Create TraderManager and BacktestManager
 	traderManager := manager.NewTraderManager()
@@ -141,6 +141,34 @@ func main() {
 		}
 	}()
 
+	// Start news refresh and auto-analysis scanner
+	go func() {
+		if err := newsService.FetchAndStore(); err != nil {
+			logger.Warnf("⚠️ Initial news fetch failed: %v", err)
+		}
+		if err := newsService.MaybeGenerateAutoAnalysisFromAnchor(time.Now().UTC()); err != nil {
+			logger.Warnf("⚠️ Initial auto news analysis scan failed: %v", err)
+		}
+
+		newsTicker := time.NewTicker(4 * time.Hour)
+		defer newsTicker.Stop()
+		analysisTicker := time.NewTicker(1 * time.Hour)
+		defer analysisTicker.Stop()
+
+		for {
+			select {
+			case <-newsTicker.C:
+				if err := newsService.FetchAndStore(); err != nil {
+					logger.Warnf("⚠️ Periodic news fetch failed: %v", err)
+				}
+			case <-analysisTicker.C:
+				if err := newsService.MaybeGenerateAutoAnalysisFromAnchor(time.Now().UTC()); err != nil {
+					logger.Warnf("⚠️ Periodic auto news analysis scan failed: %v", err)
+				}
+			}
+		}
+	}()
+
 	// Wait for interrupt signal
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -150,9 +178,6 @@ func main() {
 
 	<-quit
 	logger.Info("📴 Shutdown signal received, closing system...")
-
-	// Stop news service
-	newsService.Stop()
 
 	// Stop all traders
 	traderManager.StopAll()

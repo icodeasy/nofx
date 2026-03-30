@@ -64,7 +64,7 @@ func NewServer(traderManager *manager.TraderManager, st *store.Store, cryptoServ
 	debateHandler.SetTraderManager(traderManager)
 
 	// Create news handler
-	newsHandler := NewNewsHandler(newsService)
+	newsHandler := NewNewsHandler(newsService, st)
 
 	s := &Server{
 		router:          router,
@@ -138,8 +138,12 @@ func (s *Server) setupRoutes() {
 
 		// News (no authentication required - public news feed)
 		api.GET("/news", s.newsHandler.HandleGetNews)
-		api.POST("/news/refresh", s.newsHandler.HandleRefreshNews)
+		api.GET("/news/around", s.newsHandler.HandleGetNewsAroundTimestamp)
+		api.GET("/news/analysis", s.newsHandler.HandleGetAIAnalysis)
+		api.GET("/news/analyses", s.newsHandler.HandleGetAllAIAnalyses)
 		api.POST("/news/:id/feedback", s.newsHandler.HandleNewsFeedback)
+		api.DELETE("/news/analysis/:timestamp", s.newsHandler.HandleDeleteAIAnalysis)
+		api.PUT("/news/analysis/:timestamp/stars", s.newsHandler.HandleUpdateAIAnalysisStars)
 
 		// Authentication related routes (no authentication required)
 		api.POST("/register", s.handleRegister)

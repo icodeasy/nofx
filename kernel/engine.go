@@ -148,6 +148,7 @@ type Context struct {
 	OIRankingData      *nofxos.OIRankingData              `json:"-"` // Market-wide OI ranking data
 	NetFlowRankingData *nofxos.NetFlowRankingData         `json:"-"` // Market-wide fund flow ranking data
 	PriceRankingData   *nofxos.PriceRankingData           `json:"-"` // Market-wide price gainers/losers
+	NewsAnalysisData   *store.AIAnalysis                  `json:"-"` // AI-generated market analysis
 	BTCETHLeverage     int                                `json:"-"`
 	AltcoinLeverage    int                                `json:"-"`
 	Timeframes         []string                           `json:"-"`
@@ -1120,6 +1121,38 @@ func (e *StrategyEngine) FetchPriceRankingData() *nofxos.PriceRankingData {
 	return data
 }
 
+// FetchNewsAnalysisData fetches AI-generated market analysis for the current 4-hour block
+func (e *StrategyEngine) FetchNewsAnalysisData(newsStore *store.NewsStore) *store.AIAnalysis {
+	indicators := e.config.Indicators
+	if !indicators.EnableNewsAnalysis {
+		return nil
+	}
+
+	// Get language preference (default to strategy language)
+	language := indicators.NewsAnalysisLanguage
+	if language == "" {
+		if e.GetLanguage() == LangChinese {
+			language = "zh"
+		} else {
+			language = "en"
+		}
+	}
+
+	now := time.Now().UTC()
+	timestamp := store.NormalizeAIAnalysisTimestamp(now.Unix())
+
+	// Fetch from store
+	analysis, err := newsStore.GetAIAnalysis(timestamp, language)
+	if err != nil {
+		logger.Warnf("Failed to fetch news analysis: %v", err)
+		return nil
+	}
+
+	logger.Infof("✓ News analysis data ready for %s", time.Unix(timestamp, 0).UTC().Format("2006-01-02 15:04 UTC"))
+
+	return analysis
+}
+
 // ============================================================================
 // Prompt Building - System Prompt
 // ============================================================================
@@ -1523,6 +1556,20 @@ func (e *StrategyEngine) BuildUserPrompt(ctx *Context) string {
 	// Price Ranking data (market-wide gainers/losers)
 	if ctx.PriceRankingData != nil {
 		sb.WriteString(nofxos.FormatPriceRankingForAI(ctx.PriceRankingData, nofxosLang))
+	}
+
+	// News analysis data (AI-generated market analysis)
+	if ctx.NewsAnalysisData != nil {
+		lang := e.GetLanguage()
+		if lang == LangChinese && ctx.NewsAnalysisData.Chinese != "" {
+			sb.WriteString("## 市场分析\n")
+			sb.WriteString(ctx.NewsAnalysisData.Chinese)
+			sb.WriteString("\n\n")
+		} else if ctx.NewsAnalysisData.English != "" {
+			sb.WriteString("## Market Analysis\n")
+			sb.WriteString(ctx.NewsAnalysisData.English)
+			sb.WriteString("\n\n")
+		}
 	}
 
 	sb.WriteString("---\n\n")

@@ -82,7 +82,7 @@ const AI_PROVIDER_CONFIG: Record<string, {
     apiName: 'Anthropic',
   },
   gemini: {
-    defaultModel: 'gemini-3-pro-preview',
+    defaultModel: 'gemini-flash-latest',
     apiUrl: 'https://aistudio.google.com/app/apikey',
     apiName: 'Google AI Studio',
   },
@@ -595,6 +595,7 @@ export function AITradersPage({ onTraderSelect }: AITradersPageProps) {
   const handleSaveModelConfig = async (
     modelId: string,
     apiKey: string,
+    enabled: boolean,
     customApiUrl?: string,
     customModelName?: string
   ) => {
@@ -621,7 +622,7 @@ export function AITradersPage({ onTraderSelect }: AITradersPageProps) {
                 apiKey,
                 customApiUrl: customApiUrl || '',
                 customModelName: customModelName || '',
-                enabled: true,
+                enabled,
               }
               : m
           ) || []
@@ -632,7 +633,7 @@ export function AITradersPage({ onTraderSelect }: AITradersPageProps) {
           apiKey,
           customApiUrl: customApiUrl || '',
           customModelName: customModelName || '',
-          enabled: true,
+          enabled,
         }
         updatedModels = [...(allModels || []), newModel]
       }
@@ -1399,6 +1400,7 @@ function ModelConfigModal({
   onSave: (
     modelId: string,
     apiKey: string,
+    enabled: boolean,
     baseUrl?: string,
     modelName?: string
   ) => void
@@ -1410,6 +1412,7 @@ function ModelConfigModal({
   const [apiKey, setApiKey] = useState('')
   const [baseUrl, setBaseUrl] = useState('')
   const [modelName, setModelName] = useState('')
+  const [enabled, setEnabled] = useState(false)
 
   // 获取当前编辑的模型信息 - 编辑时从已配置的模型中查找，新建时从所有支持的模型中查找
   const selectedModel = editingModelId
@@ -1422,6 +1425,7 @@ function ModelConfigModal({
       setApiKey(selectedModel.apiKey || '')
       setBaseUrl(selectedModel.customApiUrl || '')
       setModelName(selectedModel.customModelName || '')
+      setEnabled(selectedModel.enabled || false)
     }
   }, [editingModelId, selectedModel])
 
@@ -1432,6 +1436,7 @@ function ModelConfigModal({
     onSave(
       selectedModelId,
       apiKey.trim(),
+      enabled,
       baseUrl.trim() || undefined,
       modelName.trim() || undefined
     )
@@ -1587,6 +1592,31 @@ function ModelConfigModal({
                     }}
                     required
                   />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <label
+                    className="text-sm font-semibold"
+                    style={{ color: '#EAECEF' }}
+                  >
+                    {language === 'zh' ? '启用' : 'Enable'}
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setEnabled(!enabled)}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${enabled ? 'bg-green-500' : 'bg-gray-600'
+                      }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                    />
+                  </button>
+                </div>
+                <div className="text-xs mb-2" style={{ color: '#848E9C' }}>
+                  {language === 'zh'
+                    ? '启用后该AI模型将可用于新闻分析和交易策略'
+                    : 'Enable this AI model for news analysis and trading strategies'}
                 </div>
 
                 <div>

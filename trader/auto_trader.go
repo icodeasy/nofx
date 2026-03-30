@@ -9,6 +9,7 @@ import (
 	"nofx/logger"
 	"nofx/market"
 	"nofx/mcp"
+	"nofx/news"
 	"nofx/store"
 	"strings"
 	"sync"
@@ -1007,6 +1008,41 @@ func (at *AutoTrader) buildTradingContext() (*kernel.Context, error) {
 		if ctx.PriceRankingData != nil {
 			logger.Infof("📈 [%s] Price ranking data ready for %d durations",
 				at.name, len(ctx.PriceRankingData.Durations))
+		}
+	}
+
+	// 14. Get News analysis data (AI-generated market analysis)
+	if strategyConfig.Indicators.EnableNewsAnalysis {
+		logger.Infof("📰 [%s] Building temporary predictive news analysis...", at.name)
+		symbolSet := make(map[string]bool)
+		for _, coin := range candidateCoins {
+			symbolSet[coin.Symbol] = true
+		}
+		for _, pos := range positionInfos {
+			symbolSet[pos.Symbol] = true
+		}
+
+		symbols := make([]string, 0, len(symbolSet))
+		for symbol := range symbolSet {
+			symbols = append(symbols, symbol)
+		}
+
+		language := "en"
+		if strategyConfig.Indicators.NewsAnalysisLanguage != "" {
+			language = strategyConfig.Indicators.NewsAnalysisLanguage
+		} else if strategyConfig.Language == "zh" {
+			language = "zh"
+		}
+
+		newsService := news.NewService(at.store)
+		ctx.NewsAnalysisData, err = newsService.GenerateTemporaryTradingAnalysis(time.Now().UTC(), language, at.mcpClient, symbols)
+		if err != nil {
+			logger.Warnf("⚠️ [%s] Failed to build temporary news analysis: %v", at.name, err)
+			ctx.NewsAnalysisData = nil
+		}
+		if ctx.NewsAnalysisData != nil {
+			logger.Infof("📰 [%s] Temporary news analysis ready at %s",
+				at.name, time.Unix(ctx.NewsAnalysisData.Timestamp, 0).Format(time.RFC3339))
 		}
 	}
 

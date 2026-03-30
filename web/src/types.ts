@@ -580,6 +580,10 @@ export interface IndicatorConfig {
   enable_price_ranking?: boolean;
   price_ranking_duration?: string;  // "1h", "4h", "24h" or "1h,4h,24h"
   price_ranking_limit?: number;
+
+  // News analysis data (AI-generated market analysis)
+  enable_news_analysis?: boolean;
+  news_analysis_language?: string;  // "en", "zh", or empty = follow strategy language
 }
 
 // ========== Structured Indicator Parameter Types ==========

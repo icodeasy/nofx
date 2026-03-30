@@ -1,302 +1,540 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { Newspaper, ExternalLink, Clock, Globe, RefreshCw, ThumbsUp, ThumbsDown } from 'lucide-react'
-import { motion } from 'framer-motion'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { ChevronDown, ChevronUp, Brain, RefreshCw, X, TrendingUp as ChartIcon, Star } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import ReactMarkdown from 'react-markdown'
 import { useLanguage } from '../contexts/LanguageContext'
 import { notify } from '../lib/notify'
+import { NewsChart, TopBottomInfo } from './NewsChart'
 
 const API_BASE = import.meta.env.VITE_API_BASE || ''
 
-interface NewsItem {
-  id: string
-  title: string
-  source: string
-  url: string
-  published_at: string
-  snippet: string
-  good_count: number
-  bad_count: number
+interface AIAnalysis {
+  timestamp: number
+  title?: string
+  english: string
+  chinese: string
+  date: string
+  stars: number
+  pending?: boolean
 }
 
-interface NewsResponse {
-  news: NewsItem[]
-  total: number
+const normalizeAnalysisTimestamp = (timestamp: number) => {
+  const bucketSeconds = 4 * 60 * 60
+  return Math.floor(timestamp / bucketSeconds) * bucketSeconds
+}
+
+const sortAnalyses = (analyses: AIAnalysis[]) =>
+  [...analyses].sort((a, b) => a.timestamp - b.timestamp)
+
+const getLocale = (language: string) => (language === 'zh' ? 'zh-CN' : 'en-US')
+
+const formatAnalysisDate = (timestamp: number, language: string) =>
+  new Date(timestamp * 1000).toLocaleString(getLocale(language), {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+
+const localizeAnalysisTitle = (title: string | undefined, language: string) => {
+  if (!title) return title
+
+  const locale = getLocale(language)
+  return title.replace(/\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC/g, (utcText) => {
+    const isoLike = utcText.replace(' UTC', ':00Z').replace(' ', 'T')
+    const date = new Date(isoLike)
+
+    if (Number.isNaN(date.getTime())) {
+      return utcText
+    }
+
+    return new Intl.DateTimeFormat(locale, {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(date)
+  })
+}
+
+const normalizeAnalysisForDisplay = (analysis: AIAnalysis, language: string): AIAnalysis => ({
+  ...analysis,
+  date: formatAnalysisDate(analysis.timestamp, language),
+  title: localizeAnalysisTitle(analysis.title, language),
+})
+
+const hasFormedNextPivot = (info?: TopBottomInfo | null) => {
+  if (!info || !info.nearestPivotType) {
+    return false
+  }
+
+  if (info.nearestPivotType === 'top') {
+    return !!info.nearestTop && info.nearestTop.time > info.timestampAtClick
+  }
+
+  return !!info.nearestBottom && info.nearestBottom.time > info.timestampAtClick
 }
 
 export function NewsTab() {
   const { language } = useLanguage()
-  const [newsItems, setNewsItems] = useState<NewsItem[]>([])
-  const [isLoading, setIsLoading] = useState(false)
-  const [isLoadingMore, setIsLoadingMore] = useState(false)
-  const [isRefreshing, setIsRefreshing] = useState(false)
-  const [hasMore, setHasMore] = useState(true)
-  const [offset, setOffset] = useState(0)
-  const limit = 20
-  const observerTarget = useRef<HTMLDivElement>(null)
+  const analysisSymbol = 'BTCUSDT'
 
-  const fetchNews = useCallback(async (currentOffset: number, isLoadMore = false) => {
-    try {
-      if (isLoadMore) {
-        setIsLoadingMore(true)
-      } else {
-        setIsLoading(true)
-      }
+  // AI Analysis state
+  const [aiPanelExpanded, setAiPanelExpanded] = useState(true)
+  const [aiAnalysis, setAiAnalysis] = useState<AIAnalysis | null>(null)
+  const [savedAnalyses, setSavedAnalyses] = useState<AIAnalysis[]>([])
+  const [isLoadingAI, setIsLoadingAI] = useState(false)
+  const [loadedFromDB, setLoadedFromDB] = useState(false)
 
-      // Map language code: 'zh' -> 'zh', 'en' -> 'en'
-      const langParam = language === 'zh' ? 'zh' : 'en'
+  // Chart click state
+  const [clickedTimestamp, setClickedTimestamp] = useState<number | undefined>(undefined)
+  const [latestCandleTimestamp, setLatestCandleTimestamp] = useState<number | undefined>(undefined)
+  const [topBottomInfo, setTopBottomInfo] = useState<TopBottomInfo | null>(null)
+  const tabRefs = useRef<Record<number, HTMLDivElement | null>>({})
 
-      const response = await fetch(
-        `${API_BASE}/news?limit=${limit}&offset=${currentOffset}&language=${langParam}`
+  const fetchAIAnalysis = useCallback(async (timestamp: number, forceRefresh = false, topBottomInfo?: TopBottomInfo | null) => {
+    const analysisTimestamp = normalizeAnalysisTimestamp(timestamp)
+
+    if (topBottomInfo && !hasFormedNextPivot(topBottomInfo)) {
+      setSavedAnalyses(prev => prev.filter(a => a.timestamp !== analysisTimestamp || !a.pending))
+      setIsLoadingAI(false)
+      notify.info(
+        language === 'zh'
+          ? '该位置之后尚未形成新的顶或底，暂不生成 AI 分析'
+          : 'No new top or bottom has formed after this point, so AI analysis was skipped'
       )
+      return
+    }
+
+    // Check if already in local cache first (avoid API call if found)
+    const existingAnalysis = savedAnalyses.find(a => a.timestamp === analysisTimestamp && !a.pending)
+    if (!forceRefresh && existingAnalysis) {
+      setAiAnalysis(existingAnalysis)
+      setAiPanelExpanded(true)
+      return
+    }
+
+    const pendingAnalysis: AIAnalysis = {
+      timestamp: analysisTimestamp,
+      title: '',
+      english: '',
+      chinese: '',
+      date: formatAnalysisDate(analysisTimestamp, language),
+      stars: 0,
+      pending: true,
+    }
+
+    // Not in local cache - call API which will check DB first and return cached if available
+    try {
+      setIsLoadingAI(true)
+      setAiPanelExpanded(true) // Auto-expand when loading starts
+      setSavedAnalyses(prev => {
+        const filtered = prev.filter(a => a.timestamp !== analysisTimestamp)
+        return sortAnalyses([...filtered, pendingAnalysis])
+      })
+      setAiAnalysis(pendingAnalysis)
+
+      const params = new URLSearchParams({
+        timestamp: String(timestamp),
+        language: language === 'zh' ? 'zh' : 'en',
+        symbol: analysisSymbol,
+      })
+      if (forceRefresh) {
+        params.set('force_refresh', 'true')
+      }
+
+      // Add top/bottom info to the request if available
+      if (topBottomInfo) {
+        params.set('nearest_top_price', String(topBottomInfo.nearestTop?.price || ''))
+        params.set('nearest_top_time', String(topBottomInfo.nearestTop?.time || ''))
+        params.set('nearest_bottom_price', String(topBottomInfo.nearestBottom?.price || ''))
+        params.set('nearest_bottom_time', String(topBottomInfo.nearestBottom?.time || ''))
+        params.set('price_at_click', String(topBottomInfo.priceAtClick))
+        params.set('timestamp_at_click', String(topBottomInfo.timestampAtClick))
+        params.set('nearest_pivot_type', topBottomInfo.nearestPivotType || '')
+      }
+
+      const url = `${API_BASE}/news/analysis?${params.toString()}`
+      console.log('📊 Fetching AI analysis:', { topBottomInfo, url })
+
+      const response = await fetch(url)
 
       if (!response.ok) {
-        throw new Error('Failed to fetch news')
-      }
-
-      const data: NewsResponse = await response.json()
-
-      if (isLoadMore) {
-        setNewsItems((prev) => [...prev, ...data.news])
-      } else {
-        setNewsItems(data.news)
-      }
-
-      setHasMore(data.news.length === limit)
-      setOffset(currentOffset + data.news.length)
-    } catch (error) {
-      console.error('Error fetching news:', error)
-    } finally {
-      setIsLoading(false)
-      setIsLoadingMore(false)
-    }
-  }, [limit, language])
-
-  useEffect(() => {
-    fetchNews(0)
-  }, [fetchNews])
-
-  // Infinite scroll using Intersection Observer
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasMore && !isLoading && !isLoadingMore) {
-          fetchNews(offset, true)
+        let errorMessage = 'Failed to fetch AI analysis'
+        if (response.status === 422) {
+          const data = await response.json().catch(() => null)
+          errorMessage = data?.error || errorMessage
         }
-      },
-      { threshold: 0.1 }
-    )
-
-    const currentTarget = observerTarget.current
-    if (currentTarget) {
-      observer.observe(currentTarget)
-    }
-
-    return () => {
-      if (currentTarget) {
-        observer.unobserve(currentTarget)
+        throw new Error(errorMessage)
       }
-    }
-  }, [hasMore, isLoading, isLoadingMore, offset, fetchNews])
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    const now = new Date()
-    const diffInMs = now.getTime() - date.getTime()
-    const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60))
-    const diffInDays = Math.floor(diffInHours / 24)
+      const data: AIAnalysis = await response.json()
+      const normalizedData = normalizeAnalysisForDisplay({ ...data, pending: false }, language)
 
-    if (diffInHours < 1) {
-      return 'Just now'
-    } else if (diffInHours < 24) {
-      return `${diffInHours}h ago`
-    } else if (diffInDays === 1) {
-      return 'Yesterday'
-    } else if (diffInDays < 7) {
-      return `${diffInDays}d ago`
-    } else {
-      return date.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
+      // Add to saved analyses list (avoid duplicates) - this updates local cache
+      setSavedAnalyses(prev => {
+        const filtered = prev.filter(a => a.timestamp !== normalizedData.timestamp)
+        return sortAnalyses([...filtered, normalizedData])
       })
-    }
-  }
 
-  const handleRefresh = async () => {
+      setAiAnalysis(normalizedData)
+    } catch (error) {
+      setSavedAnalyses(prev => prev.filter(a => a.timestamp !== analysisTimestamp))
+      if (aiAnalysis?.timestamp === analysisTimestamp) {
+        setAiAnalysis(null)
+      }
+      console.error('Error fetching AI analysis:', error)
+      const message = error instanceof Error ? error.message : ''
+      if (message.includes('No next top or bottom has formed')) {
+        notify.info(
+          language === 'zh'
+            ? '该位置之后尚未形成新的顶或底，暂不生成 AI 分析'
+            : 'No new top or bottom has formed after this point, so AI analysis was skipped'
+        )
+      } else {
+        notify.error(language === 'zh' ? '获取AI分析失败' : 'Failed to fetch AI analysis')
+      }
+    } finally {
+      setIsLoadingAI(false)
+    }
+  }, [language, savedAnalyses, aiAnalysis])
+
+  // Delete AI analysis
+  const handleDeleteAnalysis = useCallback(async (timestamp: number, event: React.MouseEvent) => {
+    event.stopPropagation() // Prevent tab selection
+
     try {
-      setIsRefreshing(true)
-      const response = await fetch(`${API_BASE}/news/refresh`, {
-        method: 'POST',
+      const response = await fetch(`${API_BASE}/news/analysis/${timestamp}`, {
+        method: 'DELETE',
       })
 
       if (!response.ok) {
-        throw new Error('Failed to refresh news')
+        throw new Error('Failed to delete analysis')
       }
 
-      // After refresh, reload the news from the beginning
-      setOffset(0)
-      setHasMore(true)
-      await fetchNews(0)
+      // Calculate remaining analyses before state update
+      const remaining = savedAnalyses.filter(a => a.timestamp !== timestamp)
+
+      // Remove from local state
+      setSavedAnalyses(remaining)
+
+      // If the deleted analysis was currently selected
+      if (aiAnalysis?.timestamp === timestamp) {
+        if (remaining.length > 0) {
+          // Switch to the first remaining analysis and show its marker
+          setAiAnalysis(remaining[0])
+          setClickedTimestamp(remaining[0].timestamp)
+        } else {
+          // No remaining analyses - clear everything
+          setAiAnalysis(null)
+          setClickedTimestamp(undefined)
+          setTopBottomInfo(null)
+        }
+      }
+
+      notify.success(language === 'zh' ? '分析已删除' : 'Analysis deleted')
     } catch (error) {
-      console.error('Error refreshing news:', error)
-    } finally {
-      setIsRefreshing(false)
+      console.error('Error deleting analysis:', error)
+      notify.error(language === 'zh' ? '删除失败' : 'Failed to delete analysis')
     }
-  }
+  }, [language, savedAnalyses, aiAnalysis])
 
-  const handleFeedback = async (newsId: string, type: 'good' | 'bad', event: React.MouseEvent) => {
-    event.preventDefault() // Prevent opening the news link
-    event.stopPropagation()
-
+  // Update star rating for an AI analysis
+  const handleUpdateStars = useCallback(async (timestamp: number, stars: number) => {
     try {
-      const response = await fetch(`${API_BASE}/news/${newsId}/feedback`, {
-        method: 'POST',
+      const response = await fetch(`${API_BASE}/news/analysis/${timestamp}/stars`, {
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ type }),
+        body: JSON.stringify({ stars }),
       })
 
       if (!response.ok) {
-        throw new Error('Failed to submit feedback')
+        throw new Error('Failed to update star rating')
       }
 
-      // Update the local state to reflect the feedback
-      setNewsItems((prev) =>
-        prev.map((item) => {
-          if (item.id === newsId) {
-            return {
-              ...item,
-              good_count: type === 'good' ? item.good_count + 1 : item.good_count,
-              bad_count: type === 'bad' ? item.bad_count + 1 : item.bad_count,
-            }
-          }
-          return item
-        })
+      // Update local state
+      setSavedAnalyses(prev =>
+        prev.map(a => (a.timestamp === timestamp ? { ...a, stars } : a))
       )
 
-      notify.success(type === 'good' ? 'Thanks for the positive feedback!' : 'Thanks for your feedback!')
+      if (aiAnalysis?.timestamp === timestamp) {
+        setAiAnalysis({ ...aiAnalysis, stars })
+      }
+
+      notify.success(language === 'zh' ? '评分已更新' : 'Rating updated')
     } catch (error) {
-      console.error('Error submitting feedback:', error)
-      notify.error('Failed to submit feedback')
+      console.error('Error updating star rating:', error)
+      notify.error(language === 'zh' ? '评分更新失败' : 'Failed to update rating')
     }
+  }, [language, aiAnalysis])
+
+  // Fetch all saved AI analyses from database on mount
+  const fetchAllAnalyses = useCallback(async () => {
+    try {
+      const response = await fetch(
+        `${API_BASE}/news/analyses?language=${language === 'zh' ? 'zh' : 'en'}`
+      )
+
+      if (!response.ok) {
+        return // Silently fail - no saved analyses yet
+      }
+
+      const data: AIAnalysis[] = await response.json()
+
+      if (data.length > 0) {
+        const sortedData = sortAnalyses(data.map(analysis => normalizeAnalysisForDisplay(analysis, language)))
+        setSavedAnalyses(sortedData)
+        // Set the most recent analysis as current
+        setAiAnalysis(sortedData[sortedData.length - 1])
+        setLoadedFromDB(true)
+      }
+    } catch (error) {
+      console.error('Error fetching saved analyses:', error)
+    }
+  }, [language])
+
+  // Fetch all saved AI analyses from database on mount
+  useEffect(() => {
+    fetchAllAnalyses()
+  }, [fetchAllAnalyses])
+
+  useEffect(() => {
+    if (!aiPanelExpanded || !aiAnalysis) {
+      return
+    }
+
+    const activeTab = tabRefs.current[aiAnalysis.timestamp]
+    activeTab?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
+  }, [aiAnalysis, aiPanelExpanded, savedAnalyses])
+
+  useEffect(() => {
+    if (!aiAnalysis) {
+      setClickedTimestamp(undefined)
+      setTopBottomInfo(null)
+      return
+    }
+
+    setClickedTimestamp(aiAnalysis.timestamp)
+  }, [aiAnalysis])
+
+  const handleChartClick = async (timestamp: number, chartTopBottomInfo?: TopBottomInfo) => {
+    console.log('📊 Chart clicked at timestamp:', timestamp, 'Date:', new Date(timestamp * 1000).toLocaleString(), 'TopBottomInfo:', chartTopBottomInfo)
+
+    // Set the clicked timestamp to show a mark on the chart
+    setClickedTimestamp(timestamp)
+
+    // Update top/bottom info if provided directly from chart
+    if (chartTopBottomInfo) {
+      setTopBottomInfo(chartTopBottomInfo)
+    }
+
+    // Fetch AI analysis for this timestamp - don't force refresh, let it use cache/DB first
+    fetchAIAnalysis(timestamp, false, chartTopBottomInfo || topBottomInfo || undefined)
+  }
+
+  // Handle top/bottom info from chart click
+  const handleTopBottomChange = (info: TopBottomInfo) => {
+    console.log('📊 Top/Bottom info:', info)
+    setTopBottomInfo(info)
   }
 
   return (
-    <div className="h-full w-full flex flex-col">
+    <div className="w-full flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/5 bg-[#0B0E11]/50">
         <div className="flex items-center gap-2">
-          <Newspaper className="w-4 h-4 text-nofx-gold" />
-          <h2 className="text-sm font-semibold text-white">Blockchain News</h2>
+          <ChartIcon className="w-4 h-4 text-nofx-gold" />
+          <h2 className="text-sm font-semibold text-white">Market Analysis</h2>
         </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleRefresh}
-            disabled={isRefreshing || isLoading}
-            className="flex items-center gap-1.5 px-2.5 py-1 bg-nofx-gold/10 border border-nofx-gold/20 rounded text-[10px] font-medium text-nofx-gold hover:bg-nofx-gold/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Refresh news"
+      </div>
+
+      {/* Market Chart */}
+      <div className="border-b border-white/5">
+        <NewsChart
+          symbol={analysisSymbol}
+          interval="4h"
+          height={300}
+          exchange="binance"
+          onChartClick={handleChartClick}
+          onTopBottomChange={handleTopBottomChange}
+          clickedTimestamp={clickedTimestamp}
+          onLatestCandle={setLatestCandleTimestamp}
+        />
+      </div>
+
+      {/* AI Analysis Panel - Collapsible */}
+      <AnimatePresence>
+        {(aiAnalysis || isLoadingAI) && (
+          <motion.div
+            initial={{ maxHeight: 0, opacity: 0 }}
+            animate={{ maxHeight: aiPanelExpanded ? 5000 : 48, opacity: 1 }}
+            exit={{ maxHeight: 0, opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="border-b border-white/5 overflow-hidden flex flex-col"
           >
-            <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
-            <span>{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
-          </button>
-          <div className="flex items-center gap-1 text-[10px] text-nofx-text-muted">
-            <Globe className="w-3 h-3" />
-            <span>Google News</span>
-          </div>
-        </div>
-      </div>
+            {/* AI Panel Header - Fixed */}
+            <div
+              className="flex items-center justify-between px-4 py-3 bg-[#0B0E11]/80 cursor-pointer hover:bg-white/5 transition-colors"
+              style={{ height: '48px', flexShrink: 0 }}
+              onClick={() => setAiPanelExpanded(!aiPanelExpanded)}
+            >
+              <div className="flex items-center gap-2">
+                <Brain className="w-4 h-4 text-nofx-gold" />
+                <span className="text-xs font-medium text-white">
+                  🤖 {language === 'zh' ? 'AI 市场分析' : 'AI Market Analysis'}
+                </span>
+                {savedAnalyses.length > 0 && (
+                  <span className="text-xs text-nofx-text-muted">
+                    ({savedAnalyses.length})
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                {aiAnalysis && (
+                  <button
+                    onClick={() => fetchAIAnalysis(aiAnalysis.timestamp, true)}
+                    disabled={isLoadingAI}
+                    className="text-xs text-nofx-text-muted hover:text-white transition-colors disabled:opacity-50"
+                    title={language === 'zh' ? '刷新分析' : 'Refresh analysis'}
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isLoadingAI ? 'animate-spin' : ''}`} />
+                  </button>
+                )}
+                <button className="text-xs text-nofx-text-muted hover:text-white transition-colors">
+                  {aiPanelExpanded ? (
+                    <ChevronUp className="w-4 h-4" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
+            </div>
 
-      {/* News List */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar">
-        {isLoading && newsItems.length === 0 ? (
-          <div className="flex items-center justify-center h-64">
-            <div className="flex flex-col items-center gap-3">
-              <div className="w-8 h-8 border-2 border-nofx-gold/30 border-t-nofx-gold rounded-full animate-spin" />
-              <p className="text-xs text-nofx-text-muted">Loading news...</p>
-            </div>
-          </div>
-        ) : newsItems.length === 0 ? (
-          <div className="flex items-center justify-center h-64">
-            <div className="flex flex-col items-center gap-3 text-nofx-text-muted">
-              <Newspaper className="w-12 h-12 opacity-30" />
-              <p className="text-sm">No news available yet</p>
-              <p className="text-xs opacity-60">News will be fetched daily at 1 AM UTC</p>
-            </div>
-          </div>
-        ) : (
-          <div className="divide-y divide-white/5">
-            {newsItems.map((item, index) => (
-              <motion.a
-                key={item.id}
-                href={item.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.02 }}
-                className="block p-4 hover:bg-white/5 transition-colors group"
-              >
-                <div className="flex gap-3">
-                  <div className="flex-1 min-w-0">
-                    <h3 className="text-sm font-medium text-white group-hover:text-nofx-gold transition-colors line-clamp-2 mb-1">
-                      {item.title}
-                    </h3>
-                    {item.snippet && (
-                      <p className="text-xs text-nofx-text-muted line-clamp-2 mb-2">
-                        {item.snippet}
-                      </p>
+            {/* AI Analysis Tabs */}
+            {aiPanelExpanded && savedAnalyses.length > 0 && (
+              <div className="flex-shrink-0 flex gap-1 px-2 py-2 bg-[#0B0E11]/50 border-b border-white/5 overflow-x-auto custom-scrollbar">
+                {savedAnalyses.map((analysis) => (
+                  <div
+                    key={analysis.timestamp}
+                    ref={(node) => {
+                      tabRefs.current[analysis.timestamp] = node
+                    }}
+                    className={`group flex-shrink-0 flex items-center gap-1 px-3 py-1.5 text-xs rounded-md transition-colors ${
+                      aiAnalysis?.timestamp === analysis.timestamp
+                        ? 'bg-nofx-gold/20 text-nofx-gold'
+                        : 'text-nofx-text-muted hover:bg-white/5 hover:text-white'
+                    }`}
+                  >
+                    <button
+                      onClick={() => {
+                        setAiAnalysis(analysis)
+                        setClickedTimestamp(analysis.timestamp)
+                      }}
+                      className="flex-1 flex items-center gap-1.5"
+                    >
+                      <span>{formatAnalysisDate(analysis.timestamp, language)}</span>
+                      {analysis.pending ? (
+                        <span className="text-[10px] text-nofx-text-muted">
+                          {language === 'zh' ? '生成中...' : 'Loading...'}
+                        </span>
+                      ) : analysis.stars > 0 ? (
+                        <span className="flex items-center gap-0.5">
+                          <Star className="w-3 h-3 fill-nofx-gold text-nofx-gold" />
+                          <span className="text-[10px]">{analysis.stars}</span>
+                        </span>
+                      ) : null}
+                    </button>
+                    <button
+                      onClick={(e) => handleDeleteAnalysis(analysis.timestamp, e)}
+                      className="opacity-0 group-hover:opacity-100 hover:opacity-100 hover:text-red-400 transition-opacity"
+                      title={language === 'zh' ? '删除分析' : 'Delete analysis'}
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* AI Panel Content - Unlimited */}
+            {aiPanelExpanded && (
+              <div className="px-4 py-3 bg-[#0B0E11]/50">
+                {isLoadingAI ? (
+                  <div className="flex items-center justify-center py-4">
+                    <div className="w-6 h-6 border-2 border-nofx-gold/30 border-t-nofx-gold rounded-full animate-spin" />
+                    <span className="ml-2 text-xs text-nofx-text-muted">
+                      {language === 'zh' ? 'AI 分析中...' : 'Generating AI analysis...'}
+                    </span>
+                  </div>
+                ) : aiAnalysis ? (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center gap-3">
+                      {/* Star Rating */}
+                      <div className="flex flex-shrink-0 items-center gap-1">
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <button
+                            key={star}
+                            onClick={() => handleUpdateStars(aiAnalysis.timestamp, star)}
+                            className="transition-colors hover:scale-110"
+                            title={`${star} ${language === 'zh' ? '星' : 'star'}${star > 1 ? 's' : ''}`}
+                          >
+                            <Star
+                              className={`w-4 h-4 ${
+                                star <= (aiAnalysis.stars || 0)
+                                  ? 'fill-nofx-gold text-nofx-gold'
+                                  : 'text-gray-600'
+                              }`}
+                            />
+                          </button>
+                        ))}
+                        {aiAnalysis.stars > 0 && (
+                          <span className="ml-2 text-xs text-nofx-text-muted">
+                            ({aiAnalysis.stars}/5)
+                          </span>
+                        )}
+                      </div>
+
+                      {aiAnalysis.title && (
+                        <div className="min-w-0 flex-1 text-sm font-semibold text-white">
+                          {localizeAnalysisTitle(aiAnalysis.title, language)}
+                        </div>
+                      )}
+                    </div>
+
+                    {(aiAnalysis.title || aiAnalysis.stars > 0) && (
+                      <div className="border-t border-white/10" />
                     )}
-                    <div className="flex items-center gap-3 text-[10px] text-nofx-text-muted/70">
-                      <span className="font-medium text-nofx-gold/80">{item.source}</span>
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {formatDate(item.published_at)}
-                      </span>
+
+                    {/* English Version */}
+                    <div>
+                      <h4 className="text-xs font-medium text-nofx-gold mb-1">English</h4>
+                      <div className="text-xs text-nofx-text-muted leading-relaxed prose prose-invert prose-sm max-w-none">
+                        <ReactMarkdown>{aiAnalysis.english}</ReactMarkdown>
+                      </div>
+                    </div>
+
+                    {/* Divider */}
+                    <div className="border-t border-white/10" />
+
+                    {/* Chinese Version */}
+                    <div>
+                      <h4 className="text-xs font-medium text-nofx-gold mb-1">中文</h4>
+                      <div className="text-xs text-nofx-text-muted leading-relaxed prose prose-invert prose-sm max-w-none">
+                        <ReactMarkdown>{aiAnalysis.chinese}</ReactMarkdown>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex flex-col items-end gap-2 flex-shrink-0 mt-1">
-                    <ExternalLink className="w-4 h-4 text-nofx-text-muted/30 group-hover:text-nofx-gold transition-colors" />
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={(e) => handleFeedback(item.id, 'good', e)}
-                        className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-green-500/70 hover:text-green-400 hover:bg-green-500/10 transition-all"
-                        title="Good news"
-                      >
-                        <ThumbsUp className="w-3 h-3" />
-                        <span>{item.good_count || 0}</span>
-                      </button>
-                      <button
-                        onClick={(e) => handleFeedback(item.id, 'bad', e)}
-                        className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-red-500/70 hover:text-red-400 hover:bg-red-500/10 transition-all"
-                        title="Bad news"
-                      >
-                        <ThumbsDown className="w-3 h-3" />
-                        <span>{item.bad_count || 0}</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </motion.a>
-            ))}
-          </div>
+                ) : null}
+              </div>
+            )}
+          </motion.div>
         )}
+      </AnimatePresence>
 
-        {/* Loading indicator for infinite scroll */}
-        {isLoadingMore && (
-          <div className="flex items-center justify-center p-4">
-            <div className="w-6 h-6 border-2 border-nofx-gold/30 border-t-nofx-gold rounded-full animate-spin" />
-          </div>
-        )}
-
-        {/* Observer target */}
-        {hasMore && !isLoading && <div ref={observerTarget} className="h-1" />}
-
-        {/* End of list indicator */}
-        {!hasMore && newsItems.length > 0 && (
-          <div className="py-6 text-center">
-            <p className="text-xs text-nofx-text-muted/50">No more news</p>
-          </div>
-        )}
-      </div>
     </div>
   )
 }

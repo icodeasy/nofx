@@ -98,6 +98,11 @@ export function IndicatorEditor({
       priceRankingNote: { zh: '显示涨幅/跌幅排行，结合资金流和持仓变化分析趋势强度', en: 'Shows top gainers/losers, combined with fund flow and OI for trend analysis' },
       priceRankingMulti: { zh: '多周期', en: 'Multi-period' },
 
+      // News Analysis
+      newsAnalysis: { zh: '新闻分析', en: 'News Analysis' },
+      newsAnalysisDesc: { zh: '基于星标历史样本与近期新闻的 4 小时预测分析', en: '4-hour predictive analysis built from starred samples and recent news' },
+      newsAnalysisNote: { zh: '面向策略运行，输出新闻事件、驱动类型与未来 4 小时趋势判断', en: 'For strategy runtime: outputs news/events, driver type, and next-4h trend prediction' },
+
       // Common settings
       duration: { zh: '周期', en: 'Duration' },
       limit: { zh: '数量', en: 'Limit' },
@@ -527,6 +532,7 @@ export function IndicatorEditor({
                   </div>
                 )}
               </div>
+
             </div>
 
             {/* Warning if features enabled but no API key */}
@@ -536,6 +542,73 @@ export function IndicatorEditor({
                 <span className="text-[10px]" style={{ color: '#F6465D' }}>
                   {language === 'zh' ? '请配置 API Key 以启用 NofxOS 数据源' : 'Please configure API Key to enable NofxOS data sources'}
                 </span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ============================================ */}
+      {/* AI Intelligence - News Analysis             */}
+      {/* ============================================ */}
+      <div
+        className="rounded-lg overflow-hidden relative"
+        style={{
+          background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.06) 0%, rgba(139, 92, 246, 0.06) 100%)',
+          border: '1px solid rgba(99, 102, 241, 0.2)',
+        }}
+      >
+        <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: 'linear-gradient(90deg, #6366f1, #8b5cf6)' }} />
+
+        <div className="p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}>
+              <Zap className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold" style={{ color: '#EAECEF' }}>{t('newsAnalysis')}</h3>
+              <span className="text-[10px]" style={{ color: '#848E9C' }}>{t('newsAnalysisNote')}</span>
+            </div>
+          </div>
+
+          <div
+            className="p-2.5 rounded-lg transition-all cursor-pointer"
+            style={{
+              background: config.enable_news_analysis ? 'rgba(99, 102, 241, 0.1)' : 'rgba(30, 35, 41, 0.5)',
+              border: config.enable_news_analysis ? '1px solid rgba(99, 102, 241, 0.3)' : '1px solid rgba(43, 49, 57, 0.5)',
+              opacity: disabled ? 0.5 : 1,
+            }}
+            onClick={() => !disabled && onChange({ ...config, enable_news_analysis: !config.enable_news_analysis })}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full" style={{ background: '#6366f1' }} />
+                <span className="text-xs font-medium" style={{ color: '#EAECEF' }}>
+                  {language === 'zh' ? '启用每日市场分析' : 'Enable Daily Market Analysis'}
+                </span>
+              </div>
+              <input
+                type="checkbox"
+                checked={config.enable_news_analysis || false}
+                onChange={(e) => { e.stopPropagation(); !disabled && onChange({ ...config, enable_news_analysis: e.target.checked }) }}
+                disabled={disabled}
+                className="w-3.5 h-3.5 rounded accent-indigo-500"
+              />
+            </div>
+            <p className="text-[10px] mt-1" style={{ color: '#5E6673' }}>{t('newsAnalysisDesc')}</p>
+            {config.enable_news_analysis && (
+              <div className="flex gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
+                <select
+                  value={config.news_analysis_language || ''}
+                  onChange={(e) => !disabled && onChange({ ...config, news_analysis_language: e.target.value })}
+                  disabled={disabled}
+                  className="flex-1 px-2 py-1 rounded text-[10px]"
+                  style={{ background: '#1E2329', border: '1px solid #2B3139', color: '#EAECEF' }}
+                >
+                  <option value="">{language === 'zh' ? '跟随策略语言' : 'Follow Strategy'}</option>
+                  <option value="en">English</option>
+                  <option value="zh">中文</option>
+                </select>
               </div>
             )}
           </div>
