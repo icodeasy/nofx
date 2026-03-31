@@ -59,7 +59,7 @@ type newsImpactAssessment struct {
 	Index       int     `json:"index"`
 	Keep        bool    `json:"keep"`
 	Direction   string  `json:"direction"`
-	Confidence  float64 `json:"confidence"`
+	Confidence  string  `json:"confidence"` // Changed from float64 to string to handle AI model responses
 	Reason      string  `json:"reason"`
 	DriverType  string  `json:"driver_type"`
 	MarketScope string  `json:"market_scope"`
@@ -201,7 +201,23 @@ func (s *Service) FetchAndStore() error {
 	// Store new items in batch
 	if len(newItems) > 0 {
 		if err := s.store.News().CreateBatch(newItems); err != nil {
-			return fmt.Errorf("failed to store news items: %w", err)
+			// Handle UNIQUE constraint violations gracefully - it means some items were already stored
+			if strings.Contains(err.Error(), "UNIQUE constraint failed") || strings.Contains(err.Error(), "duplicate key") {
+				logger.Warnf("⚠️ Some news items already exist (duplicate URLs): %v", err)
+				// Try to store items one by one to avoid duplicates
+				for _, item := range newItems {
+					if err := s.store.News().Create(item); err != nil {
+						if strings.Contains(err.Error(), "UNIQUE constraint failed") || strings.Contains(err.Error(), "duplicate key") {
+							skippedCount++
+							logger.Debugf("Skipping duplicate URL: %s", item.URL)
+						} else {
+							logger.Warnf("⚠️ Failed to store news item: %v", err)
+						}
+					}
+				}
+			} else {
+				return fmt.Errorf("failed to store news items: %w", err)
+			}
 		}
 	}
 
@@ -271,7 +287,15 @@ func (s *Service) filterMarketMovingNewsBatch(candidateModels []*store.AIModel, 
 		if assessment.Index < 0 || assessment.Index >= len(batch) {
 			continue
 		}
-		if !assessment.Keep || assessment.Confidence < 0.7 {
+
+		// Parse confidence string to float64
+		confidence, err := strconv.ParseFloat(assessment.Confidence, 64)
+		if err != nil {
+			logger.Warnf("⚠️ Failed to parse confidence value %q: %v", assessment.Confidence, err)
+			continue
+		}
+
+		if !assessment.Keep || confidence < 0.7 {
 			continue
 		}
 		if assessment.Direction != "bullish" && assessment.Direction != "bearish" {
@@ -291,7 +315,9 @@ func buildNewsFilterPrompt(batch []GoogleNewsResult, language string) string {
 	sb.WriteString("Keep only headlines with strong likely impact on BTC or the broader crypto market over the next 4-24 hours.\n")
 	sb.WriteString("Skip weak, repetitive, generic, promotional, or coin-specific noise unless it is clearly market-moving.\n")
 	sb.WriteString("If kept, direction must be bullish or bearish.\n")
-	sb.WriteString("Return JSON array only with fields: index, keep, direction, confidence, reason, driver_type, market_scope.\n\n")
+	sb.WriteString("Return JSON array only with fields: index, keep, direction, confidence, reason, driver_type, market_scope.\n")
+	sb.WriteString("IMPORTANT: confidence must be a string number like \"0.8\" or \"0.95\", not a numeric value.\n")
+	sb.WriteString("IMPORTANT: direction must be exactly \"bullish\" or \"bearish\".\n\n")
 	sb.WriteString("Headlines:\n")
 	for i, item := range batch {
 		sb.WriteString(fmt.Sprintf("%d. [%s] %s | %s | %s\n", i, item.PublishedAt.UTC().Format(time.RFC3339), item.Source, item.Title, truncatePromptText(item.Snippet, 240)))
