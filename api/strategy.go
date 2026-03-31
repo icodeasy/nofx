@@ -8,6 +8,7 @@ import (
 	"nofx/logger"
 	"nofx/market"
 	"nofx/mcp"
+	"nofx/news"
 	"nofx/store"
 	"time"
 
@@ -562,6 +563,39 @@ func (s *Server) handleStrategyTestRun(c *gin.Context) {
 	// Fetch Price ranking data (market-wide gainers/losers)
 	priceRankingData := engine.FetchPriceRankingData()
 
+	// Fetch News Analysis data if enabled in strategy
+	var newsAnalysisData *store.AIAnalysis
+	if req.Config.Indicators.EnableNewsAnalysis {
+		// Determine language for news analysis
+		language := req.Config.Indicators.NewsAnalysisLanguage
+		if language == "" {
+			if req.Config.Language == "zh" {
+				language = "zh"
+			} else {
+				language = "en"
+			}
+		}
+
+		// Create AI client for news analysis if AI model ID is provided
+		var aiClient mcp.AIClient
+		if req.AIModelID != "" {
+			model, err := s.store.AIModel().Get(userID, req.AIModelID)
+			if err == nil {
+				aiClient, _ = createAIClientFromModel(model)
+			}
+		}
+
+		// Create news service and generate temporary trading analysis
+		newsService := news.NewService(s.store)
+		newsAnalysis, err := newsService.GenerateTemporaryTradingAnalysis(time.Now().UTC(), language, aiClient, symbols)
+		if err != nil {
+			logger.Warnf("⚠️ [Strategy Test] Failed to build temporary news analysis: %v", err)
+		} else if newsAnalysis != nil {
+			newsAnalysisData = newsAnalysis
+			logger.Infof("📰 [Strategy Test] News analysis ready at %s", time.Unix(newsAnalysis.Timestamp, 0).Format(time.RFC3339))
+		}
+	}
+
 	// Build real context (for generating User Prompt)
 	testContext := &kernel.Context{
 		CurrentTime:    time.Now().UTC().Format("2006-01-02 15:04:05 UTC"),
@@ -585,6 +619,7 @@ func (s *Server) handleStrategyTestRun(c *gin.Context) {
 		OIRankingData:      oiRankingData,
 		NetFlowRankingData: netFlowRankingData,
 		PriceRankingData:   priceRankingData,
+		NewsAnalysisData:   newsAnalysisData,
 	}
 
 	// Build System Prompt
@@ -634,20 +669,14 @@ func (s *Server) handleStrategyTestRun(c *gin.Context) {
 	})
 }
 
-// runRealAITest Execute real AI test call
-func (s *Server) runRealAITest(userID, modelID, systemPrompt, userPrompt string) (string, error) {
-	// Get AI model configuration
-	model, err := s.store.AIModel().Get(userID, modelID)
-	if err != nil {
-		return "", fmt.Errorf("failed to get AI model: %w", err)
-	}
-
+// createAIClientFromModel creates an AI client from model configuration
+func createAIClientFromModel(model *store.AIModel) (mcp.AIClient, error) {
 	if !model.Enabled {
-		return "", fmt.Errorf("AI model %s is not enabled", model.Name)
+		return nil, fmt.Errorf("AI model %s is not enabled", model.Name)
 	}
 
 	if model.APIKey == "" {
-		return "", fmt.Errorf("AI model %s is missing API Key", model.Name)
+		return nil, fmt.Errorf("AI model %s is missing API Key", model.Name)
 	}
 
 	// Create AI client
@@ -682,6 +711,23 @@ func (s *Server) runRealAITest(userID, modelID, systemPrompt, userPrompt string)
 		// Use generic client
 		aiClient = mcp.NewClient()
 		aiClient.SetAPIKey(apiKey, model.CustomAPIURL, model.CustomModelName)
+	}
+
+	return aiClient, nil
+}
+
+// runRealAITest Execute real AI test call
+func (s *Server) runRealAITest(userID, modelID, systemPrompt, userPrompt string) (string, error) {
+	// Get AI model configuration
+	model, err := s.store.AIModel().Get(userID, modelID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get AI model: %w", err)
+	}
+
+	// Create AI client using helper function
+	aiClient, err := createAIClientFromModel(model)
+	if err != nil {
+		return "", err
 	}
 
 	// Call AI API
