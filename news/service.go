@@ -56,13 +56,13 @@ const autoAnalysisScanBucketKey = "news_auto_analysis_last_scan_bucket"
 const autoFilteredNewsBatchSize = 20
 
 type newsImpactAssessment struct {
-	Index       int     `json:"index"`
-	Keep        bool    `json:"keep"`
-	Direction   string  `json:"direction"`
-	Confidence  string  `json:"confidence"` // Changed from float64 to string to handle AI model responses
-	Reason      string  `json:"reason"`
-	DriverType  string  `json:"driver_type"`
-	MarketScope string  `json:"market_scope"`
+	Index       int    `json:"index"`
+	Keep        bool   `json:"keep"`
+	Direction   string `json:"direction"`
+	Confidence  string `json:"confidence"` // Changed from float64 to string to handle AI model responses
+	Reason      string `json:"reason"`
+	DriverType  string `json:"driver_type"`
+	MarketScope string `json:"market_scope"`
 }
 
 func defaultRSSQueries() rssQuerySet {
@@ -957,8 +957,8 @@ func buildTemporaryTradingAnalysisPrompt(
 	}
 	sb.WriteString("Current time: " + now.UTC().Format(time.RFC3339) + "\n\n")
 	if len(curatedNews) == 0 {
-		sb.WriteString("Curated recent news: none available.\n")
-		sb.WriteString("If news support is weak, say so clearly and lean on uncertainty rather than inventing conviction.\n\n")
+		sb.WriteString("=== CURRENT TIME (CRITICAL REFERENCE): " + now.UTC().Format(time.RFC3339) + " ===\n")
+		sb.WriteString("Analyze: macro conditions, regulatory developments, institutional flows, and crypto-native events relevant at this moment.\n\n")
 	} else {
 		sb.WriteString("Curated recent news:\n")
 		for _, item := range curatedNews {
