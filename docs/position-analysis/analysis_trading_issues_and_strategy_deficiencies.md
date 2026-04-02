@@ -1,0 +1,393 @@
+# Trading Issues & Strategy Deficiencies: Comprehensive Report
+
+**Generated from analysis of 4 ETHUSDT positions (2026-03-07 to 03-09) and source code review.**
+
+---
+
+## Part 1: Critical Systemic Issues (Must Fix)
+
+### 1.1 No Flash Crash / Volatility Cool-Down Detection
+
+**Issue:** The system opened LONG positions immediately after major price collapses without any mandatory waiting period or volatility filter.
+
+**Evidence:**
+- **03-08 LONG**: Opened at 04:11 UTC, only **1.5 hours** after a -1.48% drop to $1934 with 8x normal volume. Triggered stop-loss in 43 minutes (-0.77%).
+- **03-09 LONG**: Opened at 01:34 UTC, only **3 hours** after a flash crash to $1906 (-2.4% in 15 min, 10x volume). Closed at -0.82% after 59 minutes.
+
+**Root Cause in Code:**
+- In `kernel/engine.go` prompt (`BuildSystemPrompt`), there is NO mention of post-crash or high-volatility entry restrictions.
+- The entry rules only state: `"Sideways or low-volatility markets are forbidden"` but do NOT say `"High-volatility post-crash markets are forbidden"`.
+- `trader/auto_trader.go` has no backend logic to detect异常 volume spikes or sharp cascades and enforce a cooldown.
+
+**Fix Required:**
+```python
+# pseudocode
+IF (15m price_drop > 1.5% AND volume > 5x_average):
+    mark "crash_event"
+    cooldown = 4-6 hours
+    reject_new_entries OR confidence_penalty = -20%
+```
+
+---
+
+### 1.2 Confidence Level Ignores Market Environment
+
+**Issue:** The prompt uses a rigid confidence-to-position-size mapping that doesn't penalize dangerous environments (post-crash, counter-trend).
+
+**Evidence:**
+- **03-08 LONG**: 85% confidence after a crash → used maximum 29 USDT position. This led to the largest loss (-0.21 USDT).
+- **03-09 SHORT**: 78% confidence, but had strong signals and worked. So high confidence *can* work, but it's not adjusted for context.
+
+**Root Cause in Code:**
+- `kernel/engine.go:1248-1251` enforces:
+  ```
+  - ≥85 → 80–100% of max limit
+  - 70–84 → 50–80% of max limit
+  - 60–69 → 30–50% of max limit
+  ```
+- There is no discount factor for:
+  - Being within 6 hours of a detected crash
+  - Trading against the 4h/12h/24h trend
+  - Entering on the first bounce without confirmed support
+
+**Fix Required:**
+Add explicit confidence penalties in the prompt and backend validation:
+```
+- Post-crash (< 6h): -20%
+- Counter-trend (4h/12h opposite): -10%
+- Support not yet validated (single bounce): -10%
+- Funding rate opposite to trade direction: -5%
+```
+
+---
+
+### 1.3 Stop-Loss Validation Is Static, Not Dynamic
+
+**Issue:** `ValidateStopLossTakeProfitPrices` in `kernel/engine.go:2292` uses fixed percentage bands (min 0.5%, max 20%) without considering realized volatility.
+
+**Evidence:**
+- **03-08 LONG**: Stop loss was only 0.78% below entry. In the post-crash environment, this was hit in 43 minutes.
+- **03-09 SHORT**: Stop loss was 0.71% above entry. This worked because volatility was lower by then, but was still tight.
+
+**Root Cause in Code:**
+```go
+// kernel/engine.go:2294-2297
+const (
+    maxStopLossPercent   = 20.0
+    minStopLossPercent   = 0.5
+    minTakeProfitPercent = 1.0
+)
+```
+- The system calculates ATR (`EnableATR` exists) but does NOT feed it into SL/TP validation.
+- `ValidateRiskRewardRatio` also ignores ATR.
+
+**Fix Required:**
+Use ATR-adjusted stops:
+```go
+normalMarket:    stop_distance = max(1.0%, 1.0 × ATR)
+postCrashMarket: stop_distance = max(2.0%, 1.5 × ATR)
+```
+
+---
+
+## Part 2: Major Signal Interpretation Issues
+
+### 2.1 Over-Reliance on 1h Institutional Fund Flow (Lagging/Noise)
+
+**Issue:** The AI repeatedly treats 1-hour institutional netflow as a primary entry signal, but this is a **cumulative lagging indicator**. It captures dip-buying that may already be complete.
+
+**Evidence:**
+- **03-08 LONG**: +10.83M 1h institutional inflow ("strongest signal"). The AI entered at $1949, but by then the dip-buyers at $1940 had already filled their orders. Result: -0.77%.
+- **03-09 LONG**: +66.29M 1h inflow looked bullish, but reversed to -15M in the next hour.
+
+**Root Cause in Code:**
+- In `kernel/engine.go` (`BuildUserPrompt`), the prompt lists all timeframes (5m, 15m, 1h, 4h, 12h, 24h) but does **not require a minimum number of positive timeframes**.
+- The AI can cherry-pick the single most bullish 1h number while ignoring bearish 4h/12h/24h.
+
+**Fix Required:**
+Add a hard constraint in the prompt:
+```
+Entry Requirement (Fund Flow):
+- For LONG: At least 2 of [15m, 1h, 4h] must show positive institutional flow.
+- For SHORT: At least 2 of [15m, 1h, 4h] must show negative institutional flow.
+- NEVER open based on a single timeframe's flow.
+```
+
+---
+
+### 2.2 No Support/Resistance Validation Rules
+
+**Issue:** The AI enters on "support bounce" after a single candle or short-lived recovery. There is no backend requirement that support must be *validated* (e.g., held for >2 hours or retested multiple times).
+
+**Evidence:**
+- **03-08 LONG**: Entered because price "rebounded from $1941". But this was just a dead-cat bounce after the crash.
+- **03-09 LONG**: Entered because price "stabilized above $1936 support". The flash crash had just happened 3 hours earlier.
+
+**Root Cause in Code:**
+- The `EnableBOX` indicator provides support levels, but there is no validation engine checking:
+  - How long price has held above support
+  - Number of successful tests
+  - Whether volume has normalized
+
+**Fix Required:**
+Add support validation logic:
+```
+A "valid support bounce" requires at least ONE of:
+1. Price stays above support for ≥ 2 hours
+2. At least 2 tests of support without breaking
+3. Volume returns to normal (< 2x average)
+4. Price makes a higher high after the bounce
+```
+
+---
+
+### 2.3 Failure to Resolve Contradictory Signals
+
+**Issue:** The prompt says "Contradictory signals are forbidden" but gives no instruction on **how to resolve contradictions** or **which signal takes priority**.
+
+**Evidence:**
+- **03-08 LONG**: Bullish 1h fund flow (+10.83M) vs bearish 4h/12h/24h trend + immediate post-crash volatility. AI chose the bullish flow and lost.
+- **03-09 SHORT**: Bullish 1h fund flow (+152M) vs bearish technical rejection at resistance + 99.9% volume collapse. AI chose technicals and won — but this was an inconsistency.
+
+**Root Cause in Code:**
+- `kernel/engine.go:1257` states: `"Contradictory signals are forbidden"`.
+- This is impossible to enforce perfectly by an LLM without a hierarchy of signal priority.
+
+**Fix Required:**
+Replace the vague rule with a priority ranking:
+```
+Signal Priority Hierarchy (short-term trades < 1h):
+1. Volume anomaly (collapse/spike) - most immediate
+2. Support/Resistance rejection - immediate
+3. Multi-timeframe price action - medium
+4. OI changes - medium-lag
+5. Institutional fund flow (1h) - lagging, confirmatory only
+
+When signals conflict, higher-priority signals override lower-priority ones.
+```
+
+---
+
+## Part 3: Execution & Risk Management Deficiencies
+
+### 3.1 No Automated Time-Based or Progress-Based Exits
+
+**Issue:** The AI manually closed the 03-07 LONG after 1h14m for "no progress", but this logic is purely inside the LLM. There is no backend rule to enforce time stops or progress stops.
+
+**Evidence:**
+- **03-07 LONG**: Closed at +0.22% because "no significant progress after 1h14m" — a good discretionary call.
+- **03-08 LONG**: If a similar rule had existed, the position could have been closed before hitting the stop-loss.
+- **03-09 LONG**: Same — could have saved ~0.5% if there was a time-stop.
+
+**Root Cause in Code:**
+- `trader/auto_trader.go` has `peakPnLCache` but no logic to auto-close on:
+  - Time elapsed without X% profit
+  - Drawdown from peak exceeding a threshold
+- `PositionInfo` has `PeakPnLPct` but it's sent to the AI for judgment, not used for automated exits.
+
+**Fix Required:**
+Add automated exit rules in `auto_trader.go`:
+```go
+// Time stop
+if holdDuration > 60min and currentPnL < 0.5% {
+    close_position("time_stop")
+}
+
+// Trailing drawdown stop
+if peakPnL > 1.0% and currentPnL < peakPnL - 0.5% {
+    close_position("trailing_stop")
+}
+```
+
+---
+
+### 3.2 Risk/Reward Validation Uses Fresh Market Price, Not Actual Entry
+
+**Issue:** `ValidateRiskRewardRatio` in `kernel/engine.go:2367` validates R/R using `market.Get()` current price. By the time the order executes, the price may have moved, making the validated R/R irrelevant.
+
+**Root Cause in Code:**
+```go
+if freshData, err := market.Get(d.Symbol); err == nil && freshData.CurrentPrice > 0 {
+    actualEntryPrice = freshData.CurrentPrice
+}
+if err := ValidateRiskRewardRatio(..., actualEntryPrice, ...); err != nil {
+    return err
+}
+```
+- This validates R/R at decision-parse time, not execution time.
+- On fast-moving markets (post-crash), the execution price can differ significantly.
+
+**Fix Required:**
+Re-validate R/R at order execution time in `auto_trader.go`. If the executed entry price no longer meets the minimum R/R, cancel or reduce the order.
+
+---
+
+### 3.3 "Immediate Re-entry" Rule Is Vague and Unenforced
+
+**Issue:** The prompt says `"Immediate re-entry after exit is forbidden"`, but there's no code enforcement or clear definition of "immediate."
+
+**Evidence:**
+- **03-09 LONG**: Opened at 01:34 UTC, 1 hour after a previous short position closed (not the exact same direction, but still rapid re-engagement).
+- More importantly, no backend check prevents re-entry within N minutes of a stop-loss hit.
+
+**Root Cause in Code:**
+- The rule exists only in the prompt (`kernel/engine.go:1259`).
+- No backend logic in `auto_trader.go` tracks the last exit time per symbol and enforces a cooldown.
+
+**Fix Required:**
+Add cooldown tracking in `AutoTrader`:
+```go
+type SymbolCooldown struct {
+    LastExitTime time.Time
+    CooldownDuration time.Duration
+}
+
+// After SL hit: 2h cooldown for same symbol+direction
+// After TP hit: 1h cooldown
+```
+
+---
+
+## Part 4: Prompt Engineering & AI Behavior Issues
+
+### 4.1 OI Interpretation Lacks Nuance
+
+**Issue:** The prompt provides 4 OI scenarios, but the AI fails to distinguish between "new longs opening" (sustainable) and "short covering" (temporary) in post-crash environments.
+
+**Evidence:**
+- **03-08 LONG**: OI +17.66M with price +0.21% was read as "bullish new longs". In reality, much of this was likely shorts covering or new shorts hedging the bounce.
+- **03-09 SHORT**: OI -11.49M with price +2.13% was correctly read as short covering, enabling a good SHORT entry on the pullback.
+- The inconsistency shows the AI's interpretation is not reliable without more context.
+
+**Root Cause in Code:**
+- The OI guidance in the prompt is too simplistic for volatile post-crash markets.
+
+**Fix Required:**
+Add a volatile-market addendum to the OI rules:
+```
+Special Rule for Post-Crash Markets:
+- OI increase + price increase within 4h of a sharp drop (>1.5%) may indicate SHORT COVERING,
+  not new longs. Treat as temporary.
+- OI decrease + price increase in the same conditions is classic short covering.
+  Wait for the short-squeeze to exhaust before entering.
+```
+
+---
+
+### 4.2 AI Calculates R/R Inconsistently
+
+**Issue:** The AI's internal R/R calculations in its CoT trace are sometimes inconsistent with the prices it proposes.
+
+**Evidence:**
+- **03-08 LONG**: AI claimed "risk about 0.6%, reward about 6.2%, R/R over 10:1". Actual stop was $1935, entry ~$1950 = 0.78% risk. The AI understated risk.
+- **03-09 LONG**: AI claimed R/R "1:4.5". Actual $1950 → $1925 = 1.28% risk, $1950 → $2050 = 5.1% reward = 1:4.0. Close enough, but manual variation shows lack of standardization.
+
+**Root Cause:**
+- The prompt does not provide a formula for the AI to use for R/R. It just says "min risk-reward ratio: 1:3.0".
+- The AI estimates mentally, leading to rounding errors / optimistic bias.
+
+**Fix Required:**
+Add an explicit formula in the prompt:
+```
+RISK% = |entry_price - stop_loss| / entry_price × leverage × 100
+REWARD% = |take_profit - entry_price| / entry_price × leverage × 100
+R/R = REWARD% / RISK%
+
+You MUST calculate R/R explicitly and state it in your reasoning.
+```
+
+---
+
+### 4.3 Missing Volume-As-Signal Weight
+
+**Issue:** The most successful trade (03-09 SHORT) was driven by a 99.9% volume collapse, but the prompt doesn't explicitly teach the AI that extreme volume anomalies are high-confidence signals.
+
+**Evidence:**
+- **03-09 SHORT**: Volume dropped from 291K to 165. This correctly signaled buyer exhaustion.
+- In the other three trades, volume was either ignored or misread.
+
+**Root Cause:**
+- `EnableVolume` includes volume data in the prompt, but there is no rule like:
+  `"If volume collapses to <1% of recent average after a sharp move, this indicates momentum exhaustion."`
+
+**Fix Required:**
+Add volume-specific guidance:
+```
+Volume Signals:
+- After a sharp price move (>1.5% in 15m), if the next candle's volume drops to <10% of the move's volume, momentum is likely exhausted.
+- If it drops to <1%, exhaustion is extremely high (use as primary signal).
+```
+
+---
+
+## Part 5: Minor Issues & Improvements
+
+### 5.1 Recent Trade History Bias
+
+**Issue:** The prompt always shows 10 recent trades. For ETHUSDT-only trading, this creates a strong recency bias because the AI sees its own recent losses.
+
+**Root Cause in Code:**
+- `auto_trader.go:907-935` fetches `GetRecentTrades(at.id, 10)` and includes them in `ctx.RecentOrders`.
+- When the AI has just lost 2-3 trades, it may become overly cautious or overly aggressive to "make it back."
+
+**Fix:**
+Consider showing only symbol-specific stats rather than every recent trade narrative.
+
+### 5.2 No Automated Feedback Loop from Losses
+
+**Issue:** The system has a backtest engine (`backtest/runner.go`) and stats collection, but there is no automated rule adjustment when specific failure patterns repeat.
+
+**Evidence:**
+- Post-crash entries failed on **both 03-08 and 03-09**.
+- The system did not learn or tighten rules after the first failure.
+
+**Fix:**
+Add a simple pattern tracker:
+```
+IF (last 3 entries after crashes all lost):
+    increase_cooldown_from_4h_to_6h()
+```
+
+### 5.3 Grid and Strategy Modes May Co-Exist Unsafely
+
+**Issue:** `AutoTrader` carries a `gridState` field. While not active in these trades, the coexistence of grid trading and AI discretionary trading in the same struct could lead to unexpected conflicts.
+
+---
+
+## Summary Table: Issues vs. Trades
+
+| Issue | 03-07 LONG | 03-08 LONG | 03-09 LONG | 03-09 SHORT |
+|-------|------------|------------|------------|-------------|
+| **Post-crash entry too early** | N/A | ✅ Hit | ✅ Hit | N/A |
+| **Static SL too tight** | N/A | ✅ Hit | N/A | N/A |
+| **Over-reliance on 1h flow** | Minor | ✅ Major | ✅ Major | N/A |
+| **No multi-timeframe flow requirement** | N/A | ✅ Hit | N/A | N/A |
+| **No support validation** | N/A | ✅ Hit | ✅ Hit | N/A |
+| **No time-stop rule** | AI did manually | Would have helped | Would have helped | N/A |
+| **Confidence too high post-crash** | N/A | ✅ Hit | N/A | N/A |
+| **Volume signal underweighted** | N/A | N/A | N/A | ✅ Success |
+| **Contradiction resolution missing** | Minor | ✅ Hit | N/A | Minor |
+
+---
+
+## Recommended Priority Order for Fixes
+
+### P0 (Critical - Prevent Major Losses)
+1. **Add flash crash / volatility spike detection with mandatory cooldown**
+2. **Dynamic stop-loss based on ATR or recent realized volatility**
+3. **Confidence adjustment factors for market environment**
+
+### P1 (High - Improve Win Rate)
+4. **Multi-timeframe fund flow confirmation requirement**
+5. **Support/Resistance validation rules (time + retests)**
+6. **Automated time-stop / trailing drawdown exit**
+
+### P2 (Medium - Polish)
+7. **Volume anomaly scoring in prompt**
+8. **Explicit R/R calculation formula in prompt**
+9. **Re-entry cooldown enforcement in backend**
+10. **Pattern-based adaptive rule tightening**
+
+---
+
+*This report combines specific trade forensics with source-code analysis of `trader/auto_trader.go`, `kernel/engine.go`, and `manager/trader_manager.go`.*
