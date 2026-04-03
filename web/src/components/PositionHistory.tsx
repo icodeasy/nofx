@@ -426,7 +426,10 @@ async function exportPositionMarkdown(
     )
 
     const content = buildPositionMarkdown(position, filteredDecisions)
-    const filename = `position_${position.symbol}_${position.side}_${new Date(position.exit_time).toISOString().slice(0, 10)}.md`
+    const exitDate = new Date(position.exit_time)
+    const pad = (n: number) => n.toString().padStart(2, '0')
+    const dateTimePart = `${exitDate.getUTCFullYear()}-${pad(exitDate.getUTCMonth() + 1)}-${pad(exitDate.getUTCDate())}-${pad(exitDate.getUTCHours())}${pad(exitDate.getUTCMinutes())}`
+    const filename = `position_${position.symbol}_${position.side}_${dateTimePart}.md`
     const dataBlob = new Blob([content], { type: 'text/markdown' })
     const url = URL.createObjectURL(dataBlob)
 
