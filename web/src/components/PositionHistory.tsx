@@ -301,8 +301,104 @@ function filterPositionDecisions(
 }
 
 
-// Export position decisions as a JSON file
-async function exportPositionDecisions(
+// Build a comprehensive markdown report with full prompts and raw responses
+function buildPositionMarkdown(
+  position: HistoricalPosition,
+  decisions: DecisionRecord[]
+): string {
+  const lines: string[] = []
+
+  lines.push(`# Position Analysis: ${position.symbol} ${position.side}`)
+  lines.push('')
+  lines.push('- **Entry Price:** ' + formatPrice(position.entry_price || 0))
+  lines.push('- **Exit Price:** ' + formatPrice(position.exit_price || 0))
+  lines.push('- **Quantity:** ' + (position.quantity || 0).toFixed(4))
+  lines.push('- **Entry Quantity:** ' + (position.entry_quantity || position.quantity || 0).toFixed(4))
+  lines.push('- **Entry Time:** ' + (position.entry_time || '-'))
+  lines.push('- **Exit Time:** ' + (position.exit_time || '-'))
+  lines.push('- **Realized PnL:** ' + (position.realized_pnl || 0).toFixed(4) + ' USDT')
+  lines.push('- **Fee:** ' + (position.fee || 0).toFixed(4) + ' USDT')
+  lines.push('- **Leverage:** ' + (position.leverage || 1) + 'x')
+  lines.push('')
+
+  decisions.forEach((record, idx) => {
+    lines.push('---')
+    lines.push('')
+    lines.push(`## Decision ${idx + 1}`)
+    lines.push('')
+    lines.push(`- **Timestamp:** ${record.timestamp}`)
+    lines.push(`- **Cycle Number:** ${record.cycle_number}`)
+    lines.push(`- **Success:** ${record.success}`)
+    if (record.error_message) {
+      lines.push(`- **Error:** ${record.error_message}`)
+    }
+    if (record.ai_request_duration_ms) {
+      lines.push(`- **AI Request Duration:** ${record.ai_request_duration_ms} ms`)
+    }
+    lines.push('')
+
+    lines.push(`### System Prompt`)
+    lines.push('```markdown')
+    lines.push(record.system_prompt || 'N/A')
+    lines.push('```')
+    lines.push('')
+
+    lines.push(`### Input Prompt`)
+    lines.push('```markdown')
+    lines.push(record.input_prompt || 'N/A')
+    lines.push('```')
+    lines.push('')
+
+    lines.push(`### Raw AI Response`)
+    lines.push('```xml')
+    lines.push(record.raw_response || 'N/A')
+    lines.push('```')
+    lines.push('')
+
+    lines.push(`### Reasoning (CoT Trace)`)
+    lines.push('```markdown')
+    lines.push(record.cot_trace || 'N/A')
+    lines.push('```')
+    lines.push('')
+
+    lines.push(`### Decision JSON`)
+    lines.push('```json')
+    lines.push(record.decision_json || 'N/A')
+    lines.push('```')
+    lines.push('')
+
+    if (record.execution_log && record.execution_log.length > 0) {
+      lines.push(`### Execution Log`)
+      record.execution_log.forEach((log) => {
+        lines.push(`- ${log}`)
+      })
+      lines.push('')
+    }
+
+    if (record.decisions && record.decisions.length > 0) {
+      lines.push(`### Parsed Actions`)
+      record.decisions.forEach((dec, aIdx) => {
+        lines.push(`#### Action ${aIdx + 1}: ${dec.action} ${dec.symbol}`)
+        lines.push(`- **Quantity:** ${dec.quantity || '-'}`)
+        lines.push(`- **Price:** ${dec.price ? formatPrice(dec.price) : '-'}`)
+        lines.push(`- **Leverage:** ${dec.leverage || '-'}`)
+        lines.push(`- **Stop Loss:** ${dec.stop_loss ? formatPrice(dec.stop_loss) : '-'}`)
+        lines.push(`- **Take Profit:** ${dec.take_profit ? formatPrice(dec.take_profit) : '-'}`)
+        lines.push(`- **Confidence:** ${dec.confidence || '-'}`)
+        lines.push(`- **Reasoning:** ${dec.reasoning || '-'}`)
+        lines.push(`- **Order ID:** ${dec.order_id || '-'}`)
+        lines.push(`- **Executed At:** ${dec.timestamp || '-'}`)
+        lines.push(`- **Success:** ${dec.success}`)
+        if (dec.error) lines.push(`- **Error:** ${dec.error}`)
+        lines.push('')
+      })
+    }
+  })
+
+  return lines.join('\n')
+}
+
+async function exportPositionMarkdown(
   traderId: string,
   position: HistoricalPosition
 ): Promise<void> {
@@ -322,36 +418,16 @@ async function exportPositionDecisions(
       exitTime
     )
 
-    // Filter to only include the last open (and optional close) for this position
     const filteredDecisions = filterPositionDecisions(
       allDecisions,
       position.symbol,
       position.side || 'long'
     )
 
-    // Create export data
-    const exportData = {
-      position: {
-        symbol: position.symbol,
-        side: position.side,
-        entry_price: position.entry_price,
-        exit_price: position.exit_price,
-        quantity: position.quantity,
-        entry_quantity: position.entry_quantity,
-        entry_time: position.entry_time,
-        exit_time: position.exit_time,
-        realized_pnl: position.realized_pnl,
-        fee: position.fee,
-        leverage: position.leverage,
-      },
-      decisions: filteredDecisions,
-    }
-
-    // Create and download file
-    const dataStr = JSON.stringify(exportData, null, 2)
-    const dataBlob = new Blob([dataStr], { type: 'application/json' })
+    const content = buildPositionMarkdown(position, filteredDecisions)
+    const filename = `position_${position.symbol}_${position.side}_${new Date(position.exit_time).toISOString().slice(0, 10)}.md`
+    const dataBlob = new Blob([content], { type: 'text/markdown' })
     const url = URL.createObjectURL(dataBlob)
-    const filename = `position_${position.symbol}_${position.side}_${new Date(position.exit_time).toISOString().slice(0, 10)}.json`
 
     const link = document.createElement('a')
     link.href = url
@@ -471,14 +547,14 @@ function PositionRow({ position, traderId }: PositionRowProps) {
       {/* Actions */}
       <td className="py-3 px-4 text-center">
         <button
-          onClick={() => exportPositionDecisions(traderId, position)}
+          onClick={() => exportPositionMarkdown(traderId, position)}
           className="px-2 py-1 text-xs rounded transition-colors hover:opacity-80"
           style={{
             background: '#2B3139',
             color: '#EAECEF',
             border: '1px solid #3E454D',
           }}
-          title="Export decisions for this position"
+          title="Export decisions as Markdown with full prompts and raw responses"
         >
           Export
         </button>

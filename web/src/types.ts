@@ -74,6 +74,7 @@ export interface DecisionRecord {
   input_prompt: string
   cot_trace: string
   decision_json: string
+  raw_response: string
   account_state: AccountSnapshot
   positions: any[]
   candidate_coins: string[]
@@ -81,6 +82,7 @@ export interface DecisionRecord {
   execution_log: string[]
   success: boolean
   error_message?: string
+  ai_request_duration_ms?: number
 }
 
 export interface Statistics {
