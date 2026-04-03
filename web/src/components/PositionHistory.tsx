@@ -3,6 +3,7 @@ import { api } from '../lib/api'
 import { useLanguage } from '../contexts/LanguageContext'
 import { t } from '../i18n/translations'
 import { MetricTooltip } from './MetricTooltip'
+import { formatUTC } from '../lib/date'
 import type {
   HistoricalPosition,
   TraderStats,
@@ -314,8 +315,8 @@ function buildPositionMarkdown(
   lines.push('- **Exit Price:** ' + formatPrice(position.exit_price || 0))
   lines.push('- **Quantity:** ' + (position.quantity || 0).toFixed(4))
   lines.push('- **Entry Quantity:** ' + (position.entry_quantity || position.quantity || 0).toFixed(4))
-  lines.push('- **Entry Time:** ' + (position.entry_time || '-'))
-  lines.push('- **Exit Time:** ' + (position.exit_time || '-'))
+  lines.push('- **Entry Time:** ' + formatUTC(position.entry_time || ''))
+  lines.push('- **Exit Time:** ' + formatUTC(position.exit_time || ''))
   lines.push('- **Realized PnL:** ' + (position.realized_pnl || 0).toFixed(4) + ' USDT')
   lines.push('- **Fee:** ' + (position.fee || 0).toFixed(4) + ' USDT')
   lines.push('- **Leverage:** ' + (position.leverage || 1) + 'x')
@@ -326,7 +327,7 @@ function buildPositionMarkdown(
     lines.push('')
     lines.push(`## Decision ${idx + 1}`)
     lines.push('')
-    lines.push(`- **Timestamp:** ${record.timestamp}`)
+    lines.push(`- **Timestamp:** ${formatUTC(record.timestamp)}`)
     lines.push(`- **Cycle Number:** ${record.cycle_number}`)
     lines.push(`- **Success:** ${record.success}`)
     if (record.error_message) {
@@ -387,7 +388,7 @@ function buildPositionMarkdown(
         lines.push(`- **Confidence:** ${dec.confidence || '-'}`)
         lines.push(`- **Reasoning:** ${dec.reasoning || '-'}`)
         lines.push(`- **Order ID:** ${dec.order_id || '-'}`)
-        lines.push(`- **Executed At:** ${dec.timestamp || '-'}`)
+        lines.push(`- **Executed At:** ${formatUTC(dec.timestamp || '')}`)
         lines.push(`- **Success:** ${dec.success}`)
         if (dec.error) lines.push(`- **Error:** ${dec.error}`)
         lines.push('')
