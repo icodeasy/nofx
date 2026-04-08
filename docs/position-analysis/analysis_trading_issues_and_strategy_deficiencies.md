@@ -727,3 +727,380 @@ func (at *AutoTrader) checkTrailingStop(position *PositionInfo) *Decision {
 *This report combines specific trade forensics with source-code analysis of `trader/auto_trader.go`, `kernel/engine.go`, and `manager/trader_manager.go`.*
 
 **Code Investigation Added: 2026-04-03**
+
+---
+
+## Part 7: Trade Outcome Analysis & Success Patterns (2026-04-04)
+
+### 7.1 Trade Performance Summary
+
+**Four Trades Analyzed:**
+| Date | Side | Scenario | Primary Signal | Duration | Result | Execution Score |
+|------|------|----------|----------------|----------|--------|-----------------|
+| 03-07 | LONG | Short covering bounce | OI -7.49M | 1h14m | +0.22% ✅ | 7/10 |
+| 03-08 | LONG | **Post-crash dip buy** | Fund flow +10.83M | 43m | **-0.77%** ❌ | 2/10 |
+| 03-09 | LONG | **Post-flash crash recovery** | Fund flow +66.29M | 59m | **-0.82%** ❌ | 3/10 |
+| 03-09 | SHORT | **Resistance rejection** | **Volume -99.9%** | 30m | **+0.25%** ✅ | **9.3/10** |
+
+**Win Rate:** 50% (2 wins, 2 losses)
+**Total P&L:** -1.12% across 4 trades
+**Best Trade:** 03-09 SHORT (+0.25%, 9.3/10 execution)
+**Worst Trade:** 03-09 LONG (-0.82%, entered 3h after flash crash)
+
+---
+
+### 7.2 Critical Discovery: Volume Signal Underweighted
+
+**The Evidence from 03-09 SHORT Trade:**
+
+**At Entry (03:34 UTC):**
+- Volume collapsed from 291,464 → 165 (99.9% drop)
+- This signaled buyer exhaustion
+- **Stronger than** +$152M institutional fund flow
+
+**Result:**
+- Entered SHORT despite strong fund flow (逆势)
+- Closed in 30 minutes for +0.25% profit
+- Execution score: 9.3/10 (best of all trades)
+
+**The Contrast:**
+
+**03-08 & 03-09 LONG (Failed):**
+- Relied on fund flow signals (+10.83M, +66.29M)
+- Ignored post-crash volatility
+- Lost -0.77% and -0.82%
+
+**03-09 SHORT (Succeeded):**
+- Prioritized volume collapse signal
+- Overrode contradictory fund flow
+- Won +0.25%
+
+**Conclusion:** Current system gives fund flow and OI high weight, but **volume signals are underweighted especially for short-term trades.**
+
+---
+
+### 7.3 Signal Hierarchy by Timeframe (New Insight)
+
+**From actual trade outcomes:**
+
+**Short-term trades (< 1 hour):**
+1. **Volume anomalies** (collapse/spike) - Most immediate
+2. **Support/Resistance rejection** - Immediate
+3. Price action patterns
+4. OI changes
+5. **Institutional fund flow (1h)** - Lagging, confirmatory only
+
+**Medium-term trades (1-4 hours):**
+1. Multi-timeframe price action
+2. OI changes
+3. Institutional fund flow
+4. Volume patterns
+
+**Why This Matters:**
+
+The 03-09 SHORT succeeded because AI (correctly) prioritized volume collapse (signal #1) over fund flow (signal #5) for a 30-minute trade.
+
+The 03-08 & 03-09 LONGs failed because AI prioritized fund flow (signal #5) while ignoring that the market was post-crash (should have blocked entirely).
+
+**Implementation Gap:**
+
+Current prompt in `kernel/engine.go:1257` says:
+```
+- Contradictory signals are forbidden
+```
+
+**This is wrong.** It should say:
+```
+When signals conflict, higher-priority signals override lower-priority ones.
+Priority for short-term trades (< 1h):
+1. Volume anomaly (collapse/spike)
+2. S/R rejection
+3. Multi-timeframe price action
+4. OI changes
+5. Fund flow (1h) - confirmatory only
+```
+
+---
+
+### 7.4 Flash Crash Education (from Trade Analysis)
+
+**What is a Flash Crash?**
+A rapid, severe price drop (minutes/seconds) followed by quick recovery.
+
+**Example from 03-09:**
+```
+21:45 UTC: $1952.73
+22:00 UTC: $1906.63 ← FLASH CRASH (-2.4% in 15 min, 10x volume)
+22:15 UTC: $1928.07 (recovery begins)
+```
+
+**What Causes Flash Crashes:**
+1. Liquidation cascade (leveraged positions forced to sell)
+2. Large market sell order (whale dumping)
+3. Thin liquidity (not enough buyers)
+4. Algorithmic trading feedback loops
+
+**Why Trading After Flash Crashes is Risky:**
+- ❌ High volatility - market unstable
+- ❌ Fake recovery ("dead cat bounce") - shorts covering, not real buying
+- ❌ Broken technical levels - S/R zones invalidated
+- ❌ Lingering fear - traders ready to sell again
+
+**Better Approach:**
+- ✅ Wait 4-6 hours for stabilization
+- ✅ Watch volume normalization
+- ✅ Confirm with multiple timeframes
+- ✅ Wait for retests of support
+- ✅ Verify institutional commitment (not just scalping)
+
+**Rule of Thumb:**
+After flash crash (>2% in <30min with >5x volume), wait **at least 4-6 hours** before new positions in same direction.
+
+---
+
+### 7.5 Success Pattern Analysis: What Worked
+
+**03-09 SHORT Trade - The Blueprint:**
+
+**Entry Criteria:**
+1. ✅ **Resistance rejection** - Price hit $2004, rejected hard
+2. ✅ **Volume collapse** - 291K → 165 (99.9% drop)
+3. ✅ **Quick decision** - Entered within 30min of signal
+4. ✅ **Realistic R/R** - 1:3.4 (not chasing 1:10)
+
+**Exit Criteria:**
+1. ✅ **Peak tracking** - Monitored peak profit (+1.20%)
+2. ✅ **Drawdown trigger** - Exited when pulled back 0.93%
+3. ✅ **Risk recognition** - OI continued collapsing (-62.49M)
+4. ✅ **Decisive action** - 85% confidence, no hesitation
+
+**Time Management:**
+- Held for only **30 minutes**
+- Did not wait for original take profit target
+- Prioritized profit protection over maximum gain
+
+**Signal Quality:**
+- Volume collapse was **undisputable** (99.9% is extreme)
+- Technical rejection was **clear** (long upper wick)
+- Did not rely on **lagging indicators**
+
+**Adaptability:**
+- Recognized fund flow contradicted position (+$152M)
+- Chose volume signal over fund flow (correct for short-term)
+- Adjusted strategy based on real-time OI changes
+
+---
+
+### 7.6 Failure Pattern Analysis: What Didn't Work
+
+**03-08 LONG Trade - The Anti-Pattern:**
+
+**Entry Mistakes:**
+1. ❌ **Post-crash entry** - Only 1.5h after -1.48% crash
+2. ❌ **Over-reliance on fund flow** - +$10.83M looked strong
+3. ❌ **Ignored market state** - 4h/12h/24h all bearish
+4. ❌ **Static stop loss** - 0.78% buffer too tight for volatility
+5. ❌ **Max confidence** - 85% → Max position size → Max loss
+
+**Exit Mistakes:**
+1. ❌ **No early exit** - Waited for stop loss to hit
+2. ❌ **No time stop** - Despite no progress in 43 minutes
+3. ❌ **Reactive not proactive** - Market moved against position
+
+**Signal Misinterpretation:**
+- Fund flow captured dip-buyers at $1940-1945
+- By entry at $1949, buying was exhausted
+- **Timing lag** in 1h fund flow window
+
+**Risk Management Failure:**
+- Used **maximum position** (29 USDT) in **maximum risk** environment
+- Lost **-0.21 USDT** (largest loss of 4 trades)
+
+---
+
+### 7.7 Updated Implementation Priorities
+
+**Based on Trade Outcomes:**
+
+**P0 - Critical (Prevent Losses):**
+1. **Flash crash detection + 4-6h cooldown** (would have blocked 2 losing trades)
+2. **Volume anomaly detection** (would have enabled more SHORT opportunities)
+3. **Confidence adjustment for environment** (would have reduced position sizes)
+
+**P1 - High (Improve Win Rate):**
+4. **Signal priority hierarchy** (resolve contradictions systematically)
+5. **Multi-timeframe fund flow confirmation** (avoid 1h snapshot traps)
+6. **Dynamic stop loss based on volatility/ATR** (avoid tight stops in volatile markets)
+
+**P2 - Medium (Polish):**
+7. **Automated time stops** (exit if no progress in 60min)
+8. **Peak profit tracking + trailing stop** (lock in gains systematically)
+9. **Volume collapse bonus scoring** (increase confidence for extreme volume signals)
+
+---
+
+### 7.8 Specific Code Additions Based on Successful Trade
+
+**1. Volume Collapse Detection (New Feature):**
+
+```go
+// Add to trader/auto_trader.go
+func detectVolumeCollapse(currentVolume, avgVolume float64) (string, int) {
+    ratio := currentVolume / avgVolume
+
+    if ratio < 0.01 {  // < 1% of normal
+        return "extreme_collapse", 10  // Add +10 to confidence
+    } else if ratio < 0.1 {  // < 10%
+        return "strong_collapse", 5
+    } else if ratio < 0.3 {  // < 30%
+        return "moderate_collapse", 2
+    }
+
+    return "normal", 0
+}
+
+// Usage in decision logic:
+// 03-09 SHORT: 165 / 40000 = 0.4% → extreme_collapse → +10 confidence
+```
+
+**2. Peak Profit Tracking (Already exists, needs usage):**
+
+```go
+// Already in auto_trader.go line 123:
+// peakPnLCache map[string]float64
+
+// Add automated trailing stop logic:
+func (at *AutoTrader) checkTrailingStop(position *PositionInfo) *Decision {
+    peakPnL := at.peakPnLCache[position.Symbol+"_"+position.Side]
+
+    // If peak profit > 1%, protect gains
+    if peakPnL > 1.0 {
+        currentPnL := position.UnrealizedPnLPct
+        drawdown := peakPnL - currentPnL
+
+        // If gave back 0.5% from peak, exit
+        if drawdown >= 0.5 {
+            return &Decision{
+                Action: "close",
+                Reason: "trailing_stop_peak_protection",
+            }
+        }
+    }
+
+    return nil
+}
+
+// This would have automated the 03-09 SHORT exit:
+// Peak: 1.20%, Current: 0.27%, Drawdown: 0.93% → Auto-close ✅
+```
+
+**3. Signal Priority Resolution (Prompt Update):**
+
+```go
+// Add to kernel/engine.go around line 1257:
+sb.WriteString("## Signal Priority (When Conflicting)\n\n")
+sb.WriteString("For short-term trades (< 1 hour hold):\n")
+sb.WriteString("1. Volume anomaly (collapse/spike) - immediate signal\n")
+sb.WriteString("2. Support/Resistance rejection - immediate signal\n")
+sb.WriteString("3. Multi-timeframe price action - medium priority\n")
+sb.WriteString("4. OI changes - medium-lag signal\n")
+sb.WriteString("5. Fund flow (1h snapshot) - confirmatory only\n\n")
+sb.WriteString("When signals conflict, higher priority overrides lower priority.\n")
+sb.WriteString("NEVER make decisions based solely on signal #5 for short-term trades.\n\n")
+```
+
+---
+
+### 7.9 Trade-by-Trade: What Code Would Have Changed
+
+**03-07 LONG (+0.22%):**
+- No crash detection triggered
+- Time stop: Would have automated the manual AI decision
+- **Result:** Same or slightly longer hold with trailing stop
+- **Verdict:** Trade remains profitable ✅
+
+**03-08 LONG (-0.77%):**
+- Crash detection: ⚠️ Detect 02:45 crash (-1.48%, 8x volume)
+- Cooldown check: ❌ Entry at 04:11 (1.5h later) → **BLOCKED**
+- Confidence: Would drop 85% → 50% (below threshold)
+- **Result:** Trade would NOT open ✅
+
+**03-09 LONG (-0.82%):**
+- Crash detection: ⚠️ Detect 22:00 flash crash (-2.4%, 10x volume)
+- Cooldown check: ❌ Entry at 01:34 (3h later) → **BLOCKED** (with 4h cooldown)
+- Confidence: Would drop 78% → 58%
+- **Result:** Trade would NOT open ✅
+
+**03-09 SHORT (+0.25%):**
+- Volume collapse: ⚠️ Detect 99.9% drop (165 vs 40K avg)
+- Confidence boost: 78% → 88% (volume bonus)
+- Trailing stop: Would auto-close at 0.93% drawdown from peak
+- **Result:** Same outcome, automated execution ✅
+
+**Net Impact:**
+- 03-08 & 03-09 losses prevented: +1.59%
+- 03-09 SHORT executed cleaner: same +0.25%
+- **Projected improvement:** From -1.12% → +0.47% (swing of +1.59%)
+
+---
+
+### 7.10 Key Insights Synthesis
+
+**The Central Truth:**
+
+**Volume is the most honest indicator for short-term trading.**
+
+- Fund flow can lag (1h window captures past activity)
+- OI requires interpretation (increase could be both longs and shorts)
+- **But volume is real-time truth**
+  - 99.9% collapse = no buyers, period
+  - 10x spike = panic/mania, period
+
+**The System's Current Blind Spot:**
+
+The system treats all indicators as equally weighted inputs to an LLM. But **indicators have different time sensitivities:**
+
+| Indicator | Time Sensitivity | Best For |
+|-----------|------------------|----------|
+| Volume | **Immediate** (< 5min) | Entry timing, reversals |
+| Price rejection | **Immediate** (< 15min) | S/R bounces, rejections |
+| OI | Medium (15-60min) | Trend confirmation |
+| Fund flow | **Lagging** (1h cumulative) | Medium-term direction |
+
+**The Missing Code:**
+
+The system needs a **signal prioritization engine**, not just a list of indicators.
+
+Currently:
+```
+AI sees all signals → AI decides based on "strength" → Contradictory signals forbidden
+```
+
+Should be:
+```
+AI classifies trade timeframe (< 1h vs > 1h)
+  → Prioritize signals by timeframe
+  → Higher priority signals override lower ones
+  → Contradictions resolved by hierarchy
+```
+
+**The Proven Success Pattern:**
+
+From the 03-09 SHORT trade:
+```
+1. Detect extreme volume signal (99.9% collapse)
+2. Confirm with technical rejection (resistance level)
+3. Ignore contradictory fund flow (for 30min trade)
+4. Enter quickly (within minutes of signal)
+5. Set tight time window (30min hold)
+6. Track peak profit constantly
+7. Exit on drawdown from peak (0.5-1%)
+8. Don't wait for original take profit target
+```
+
+**This pattern should be encoded in the prompt.**
+
+---
+
+*Trade Pattern Analysis Added: 2026-04-04*
+*Based on detailed review of 4 position analysis files*

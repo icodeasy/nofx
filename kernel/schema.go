@@ -342,7 +342,7 @@ var TradingRules = struct {
 
 // ========== OI解读 ==========
 
-// OIInterpretation OI变化的市场解读（双语）
+// OIInterpretation OI变化的市场解读（双语）- 防过度解读版
 type OIInterpretationType struct {
 	OIUp_PriceUp struct {
 		ZH string
@@ -360,6 +360,15 @@ type OIInterpretationType struct {
 		ZH string
 		EN string
 	}
+	// Additional filters
+	OIChangeTooSmall struct {
+		ZH string
+		EN string
+	}
+	ProfitTooSmall struct {
+		ZH string
+		EN string
+	}
 }
 
 var OIInterpretation = OIInterpretationType{
@@ -367,29 +376,44 @@ var OIInterpretation = OIInterpretationType{
 		ZH string
 		EN string
 	}{
-		ZH: "强多头趋势（新多单开仓，资金流入做多）",
-		EN: "Strong bullish trend (new longs opening, capital flowing into long positions)",
+		ZH: "趋势-强多头（新多单开仓）【仅在突破关键阻力位时有效，否则警惕诱多陷阱】",
+		EN: "Trend-bullish (new longs opening) [ONLY valid when breaking KEY resistance, else bull trap]",
 	},
 	OIUp_PriceDown: struct {
 		ZH string
 		EN string
 	}{
-		ZH: "强空头趋势（新空单开仓，资金流入做空）",
-		EN: "Strong bearish trend (new shorts opening, capital flowing into short positions)",
+		ZH: "趋势-强空头（新空单开仓）【仅在跌破关键支撑位时有效，否则警惕诱空陷阱】",
+		EN: "Trend-bearish (new shorts opening) [ONLY valid when breaking KEY support, else bear trap]",
 	},
 	OIDown_PriceUp: struct {
 		ZH string
 		EN string
 	}{
-		ZH: "空头平仓（空头止损离场，可能出现反转）",
-		EN: "Shorts covering (shorts stopped out, potential reversal)",
+		ZH: "空头平仓（反弹来源）【价格波动<0.3%时视为存量博弈/震荡噪音，AI慎重给出交易建议】",
+		EN: "Shorts covering (bounce source) [Price move<0.3% = position game/noise, AI be cautious]",
 	},
 	OIDown_PriceDown: struct {
 		ZH string
 		EN string
 	}{
-		ZH: "多头平仓（多头止损离场，可能出现反转）",
-		EN: "Longs closing (longs stopped out, potential reversal)",
+		ZH: "多头平仓（回调来源）【价格波动<0.3%时视为存量博弈/震荡噪音，AI慎重给出交易建议】",
+		EN: "Longs closing (pullback source) [Price move<0.3% = position game/noise, AI be cautious]",
+	},
+	// Additional filters
+	OIChangeTooSmall: struct {
+		ZH string
+		EN string
+	}{
+		ZH: "OI变动<1%: 信号无效，强制忽略",
+		EN: "OI change<1%: Signal INVALID, IGNORE",
+	},
+	ProfitTooSmall: struct {
+		ZH string
+		EN string
+	}{
+		ZH: "预期盈利<0.3%: 无法覆盖手续费，强制观望",
+		EN: "Expected profit<0.3%: Cannot cover fees, STANDBY",
 	},
 }
 
@@ -484,12 +508,15 @@ func getSchemaPromptZH(maxMarginUsage float64) string {
 		prompt += formatFieldDefZH(key, field)
 	}
 
-	// OI解读
-	prompt += "\n## 💹 持仓量(OI)变化解读\n\n"
+	// OI解读（防过度解读版）
+	prompt += "\n## 💹 持仓量(OI)与量价过滤（防过度解读版）\n\n"
 	prompt += "- **OI增加 + 价格上涨**: " + OIInterpretation.OIUp_PriceUp.ZH + "\n"
 	prompt += "- **OI增加 + 价格下跌**: " + OIInterpretation.OIUp_PriceDown.ZH + "\n"
 	prompt += "- **OI减少 + 价格上涨**: " + OIInterpretation.OIDown_PriceUp.ZH + "\n"
-	prompt += "- **OI减少 + 价格下跌**: " + OIInterpretation.OIDown_PriceDown.ZH + "\n"
+	prompt += "- **OI减少 + 价格下跌**: " + OIInterpretation.OIDown_PriceDown.ZH + "\n\n"
+	prompt += "### 🚫 信号无效（强制保持观望）\n"
+	prompt += "- " + OIInterpretation.OIChangeTooSmall.ZH + "\n"
+	prompt += "- " + OIInterpretation.ProfitTooSmall.ZH + "\n"
 
 	return prompt
 }
@@ -527,12 +554,15 @@ func getSchemaPromptEN(maxMarginUsage float64) string {
 		prompt += formatFieldDefEN(key, field)
 	}
 
-	// OI Interpretation
-	prompt += "\n## 💹 Open Interest (OI) Change Interpretation\n\n"
+	// OI Interpretation (Anti Over-Interpretation)
+	prompt += "\n## 💹 OI + Price-Volume Filter (Anti Over-Interpretation)\n\n"
 	prompt += "- **OI Up + Price Up**: " + OIInterpretation.OIUp_PriceUp.EN + "\n"
 	prompt += "- **OI Up + Price Down**: " + OIInterpretation.OIUp_PriceDown.EN + "\n"
 	prompt += "- **OI Down + Price Up**: " + OIInterpretation.OIDown_PriceUp.EN + "\n"
-	prompt += "- **OI Down + Price Down**: " + OIInterpretation.OIDown_PriceDown.EN + "\n"
+	prompt += "- **OI Down + Price Down**: " + OIInterpretation.OIDown_PriceDown.EN + "\n\n"
+	prompt += "### 🚫 INVALID Signals (Forced Standby)\n"
+	prompt += "- " + OIInterpretation.OIChangeTooSmall.EN + "\n"
+	prompt += "- " + OIInterpretation.ProfitTooSmall.EN + "\n"
 
 	return prompt
 }
