@@ -242,6 +242,11 @@ type RiskControlConfig struct {
 	MinRiskRewardRatio float64 `json:"min_risk_reward_ratio"`
 	// Min AI confidence to open position (AI guided)
 	MinConfidence int `json:"min_confidence"`
+
+	// Max allowed price drift percentage between AI decision and order execution (CODE ENFORCED)
+	// If current price deviates more than this from the price the AI used, the trade is skipped.
+	// Default: 0.3%
+	MaxSlippagePct float64 `json:"max_slippage_pct"`
 }
 
 // NewStrategyStore creates a new StrategyStore
@@ -336,6 +341,7 @@ func GetDefaultStrategyConfig(lang string) StrategyConfig {
 			MinPositionSize:                 12,  // Min 12 USDT per position (CODE ENFORCED)
 			MinRiskRewardRatio:              3.0, // Min 3:1 profit/loss ratio (AI guided)
 			MinConfidence:                   75,  // Min 75% confidence (AI guided)
+			MaxSlippagePct:                  0.3, // Max 0.3% price drift between AI decision and execution (CODE ENFORCED)
 		},
 	}
 

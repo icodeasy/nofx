@@ -1181,6 +1181,11 @@ func (at *AutoTrader) executeOpenLongWithRecord(decision *kernel.Decision, actio
 		// Continue execution, doesn't affect trading
 	}
 
+	// Price drift guard: reject if market moved too far since AI decision
+	if err := at.enforcePriceDriftGuard(decision.Symbol, marketData.CurrentPrice); err != nil {
+		return err
+	}
+
 	// Open position
 	order, err := at.trader.OpenLong(decision.Symbol, quantity, decision.Leverage)
 	if err != nil {
@@ -1296,6 +1301,11 @@ func (at *AutoTrader) executeOpenShortWithRecord(decision *kernel.Decision, acti
 	if err := at.trader.SetMarginMode(decision.Symbol, at.config.IsCrossMargin); err != nil {
 		logger.Infof("  ⚠️ Failed to set margin mode: %v", err)
 		// Continue execution, doesn't affect trading
+	}
+
+	// Price drift guard: reject if market moved too far since AI decision
+	if err := at.enforcePriceDriftGuard(decision.Symbol, marketData.CurrentPrice); err != nil {
+		return err
 	}
 
 	// Open position
@@ -2316,6 +2326,30 @@ func (at *AutoTrader) enforceMaxPositions(currentPositionCount int) error {
 	if currentPositionCount >= maxPositions {
 		return fmt.Errorf("❌ [RISK CONTROL] Already at max positions (%d/%d)", currentPositionCount, maxPositions)
 	}
+	return nil
+}
+
+// enforcePriceDriftGuard re-fetches the current price and rejects the trade
+// if the market has moved too far from the reference price the AI used.
+func (at *AutoTrader) enforcePriceDriftGuard(symbol string, referencePrice float64) error {
+	freshData, err := market.Get(symbol)
+	if err != nil || freshData.CurrentPrice <= 0 {
+		return nil // Allow if re-fetch fails (don't block on infra issues)
+	}
+
+	priceDrift := math.Abs(freshData.CurrentPrice-referencePrice) / referencePrice * 100
+
+	maxDrift := 0.3 // default
+	if at.config.StrategyConfig != nil && at.config.StrategyConfig.RiskControl.MaxSlippagePct > 0 {
+		maxDrift = at.config.StrategyConfig.RiskControl.MaxSlippagePct
+	}
+
+	if priceDrift > maxDrift {
+		logger.Infof("  🚫 [ENTRY GUARD] %s price drifted %.2f%% (%.2f → %.2f) since AI decision, skipping trade",
+			symbol, priceDrift, referencePrice, freshData.CurrentPrice)
+		return fmt.Errorf("price drift %.2f%% exceeds max %.2f%%", priceDrift, maxDrift)
+	}
+	logger.Infof("  ✓ Price drift check passed: %.2f%% (max %.2f%%)", priceDrift, maxDrift)
 	return nil
 }
 

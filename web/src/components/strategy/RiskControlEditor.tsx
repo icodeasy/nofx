@@ -42,6 +42,8 @@ export function RiskControlEditor({
       minPositionSizeDesc: { zh: 'USDT 最小名义价值', en: 'Minimum notional value in USDT' },
       minConfidence: { zh: '最小信心度', en: 'Min Confidence' },
       minConfidenceDesc: { zh: 'AI 开仓信心度阈值', en: 'AI confidence threshold for entry' },
+      maxSlippagePct: { zh: '最大价格滑点', en: 'Max Price Drift' },
+      maxSlippagePctDesc: { zh: 'AI 决策到下单期间的最大价格偏差（%），超限则跳过交易', en: 'Max price drift % between AI decision and execution, skip if exceeded' },
     }
     return translations[key]?.[language] || key
   }
@@ -381,6 +383,35 @@ export function RiskControlEditor({
               />
               <span className="w-12 text-center font-mono" style={{ color: '#0ECB81' }}>
                 {config.min_confidence ?? 75}
+              </span>
+            </div>
+          </div>
+
+          <div
+            className="p-4 rounded-lg"
+            style={{ background: '#0B0E11', border: '1px solid #F6465D' }}
+          >
+            <label className="block text-sm mb-1" style={{ color: '#EAECEF' }}>
+              {t('maxSlippagePct')}
+            </label>
+            <p className="text-xs mb-2" style={{ color: '#848E9C' }}>
+              {t('maxSlippagePctDesc')}
+            </p>
+            <div className="flex items-center gap-2">
+              <input
+                type="range"
+                value={(config.max_slippage_pct ?? 0.3) * 100}
+                onChange={(e) =>
+                  updateField('max_slippage_pct', parseInt(e.target.value) / 100)
+                }
+                disabled={disabled}
+                min={5}
+                max={200}
+                step={5}
+                className="flex-1 accent-red-500"
+              />
+              <span className="w-14 text-center font-mono" style={{ color: '#F6465D' }}>
+                {(config.max_slippage_pct ?? 0.3).toFixed(1)}%
               </span>
             </div>
           </div>
